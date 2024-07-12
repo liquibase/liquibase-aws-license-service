@@ -48,12 +48,6 @@ public class AwsLicenseService implements LicenseService {
                             .clientToken(UUID.randomUUID().toString())
                             .build());
 
-            try {
-                TimeUnit.SECONDS.sleep(1);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-
             CheckInLicenseResponse checkInLicenseResponse = client.checkInLicense(
                     CheckInLicenseRequest.builder()
                             .licenseConsumptionToken(checkoutLicenseResponse.licenseConsumptionToken())
