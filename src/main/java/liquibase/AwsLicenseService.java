@@ -54,6 +54,10 @@ public class AwsLicenseService implements LicenseService {
                             .build()
             );
 
+            if (!checkInLicenseResponse.sdkHttpResponse().isSuccessful()) {
+                Scope.getCurrentScope().getLog(AwsLicenseService.class).warning("Failed to check license back in. License will remain checked out until its TTL expires. " + checkInLicenseResponse.sdkHttpResponse().statusCode() + " " + checkInLicenseResponse.sdkHttpResponse().statusText().orElse(""));
+            }
+
             return checkoutLicenseResponse;
         }
 
