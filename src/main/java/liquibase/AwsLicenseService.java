@@ -80,7 +80,7 @@ public class AwsLicenseService implements LicenseService {
 
     @Override
     public boolean licenseIsValid(String s) {
-        String fallbackMessage = "Falling back to checking for a standard Liquibase Pro license.";
+        String fallbackMessage = "Falling back to Liquibase open source.";
         CheckoutLicenseResponse license = null;
         try {
             license = lazyLoader.get();
