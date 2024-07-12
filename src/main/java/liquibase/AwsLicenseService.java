@@ -35,7 +35,15 @@ public class AwsLicenseService implements LicenseService {
                             .keyFingerprint("aws:294406891311:AWS/Marketplace:issuer-fingerprint")
                             .entitlements(EntitlementData.builder()
                                     .name("datastore_targets")
+                                    // Currently (as of 2024-07-11), the Liquibase Pro (contract pricing) listing is configured
+                                    // as a tiered license model. This means that you do not have an individual number of entitlements
+                                    // hence the unit being "NONE".
                                     .unit(EntitlementDataUnit.NONE)
+                                    // In the event that the listing is changed to a configurable + floating license model
+                                    // which I believe is the correct model, we will need to change this to the below commented code.
+                                    // This code below essentially says, "validate that I have a license for 1 DB target".
+//                                    .unit(EntitlementDataUnit.COUNT)
+//                                    .value("1")
                                     .build())
                             .clientToken(UUID.randomUUID().toString())
                             .build());
