@@ -17,14 +17,14 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <liquibase.version>DAT-17913-SNAPSHOT</liquibase.version>
+        <liquibase.version>0-SNAPSHOT</liquibase.version>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>org.liquibase</groupId>
             <artifactId>liquibase-core</artifactId>
-            <version>master-SNAPSHOT</version>
+            <version>${liquibase.version}</version>
 <!--            liquibase-core is included and marked as provided because the parent-pom does not mark it as provided, but it needs to be-->
             <scope>provided</scope>
         </dependency>
