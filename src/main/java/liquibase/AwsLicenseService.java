@@ -1,10 +1,12 @@
 package liquibase;
 
+import com.datical.liquibase.ext.logging.custommdc.Cache;
+import liquibase.exception.UnexpectedLiquibaseException;
+import liquibase.integration.IntegrationDetails;
 import liquibase.license.LicenseInfo;
 import liquibase.license.LicenseInstallResult;
 import liquibase.license.LicenseService;
 import liquibase.license.Location;
-import com.datical.liquibase.ext.logging.custommdc.Cache;
 import liquibase.license.pro.DaticalTrueLicenseService;
 import liquibase.license.pro.LicenseTier;
 import liquibase.util.LiquibaseUtil;
@@ -17,14 +19,14 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.TimeZone;
 import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 
 import static liquibase.license.pro.DaticalTrueLicenseService.LIQUIBASE_OPEN_SOURCE_MSG;
 
 public class AwsLicenseService implements LicenseService {
 
-    private final static Cache<CheckoutLicenseResponse> lazyLoader = new Cache<>(() -> {
+    private boolean errorMessageHasBeenDisplayed = false;
+
+    private static final Cache<CheckoutLicenseResponse> lazyLoader = new Cache<>(() -> {
         try (LicenseManagerClient client = LicenseManagerClient.builder()
                 .credentialsProvider(DefaultCredentialsProvider.create()).build()) {
 
@@ -34,7 +36,7 @@ public class AwsLicenseService implements LicenseService {
                             .checkoutType(CheckoutType.PROVISIONAL)
                             .keyFingerprint("aws:294406891311:AWS/Marketplace:issuer-fingerprint")
                             .entitlements(EntitlementData.builder()
-                                    .name("datastore_targets") //FIXME should this one be changed?
+                                    .name("datastore_targets")
                                     // This code below essentially says, "validate that I have a license for 1 DB target".
                                     .unit(EntitlementDataUnit.COUNT)
                                     .value("1")
@@ -57,7 +59,7 @@ public class AwsLicenseService implements LicenseService {
 
     }, true);
 
-    private final static String buildVersion = LiquibaseUtil.getBuildVersionInfo();
+    private static final String BUILD_VERSION = LiquibaseUtil.getBuildVersionInfo();
 
     @Override
     public int getPriority() {
@@ -77,21 +79,29 @@ public class AwsLicenseService implements LicenseService {
         try {
             license = lazyLoader.get();
         } catch (NoEntitlementsAllowedException neae) {
-            Scope.getCurrentScope().getLog(getClass()).warning("The AWS License check failed with no entitlements. " + fallbackMessage, neae);
+            logErrorOnlyOnce(String.format("The AWS License check failed with no entitlements. %s%nError details: %s",
+                    fallbackMessage,  neae.getMessage()), null);
             return false;
         } catch (Exception e) {
-            Scope.getCurrentScope().getLog(getClass()).warning("The AWS License check failed with an unexpected exception. " + fallbackMessage, e);
+            logErrorOnlyOnce("The AWS License check failed with an unexpected exception. " + fallbackMessage, e);
             return false;
         }
         return license.hasEntitlementsAllowed();
     }
 
+    private void logErrorOnlyOnce(String message, Exception e) {
+        if (!errorMessageHasBeenDisplayed && Scope.getCurrentScope().get("integrationDetails", IntegrationDetails.class) != null) {
+            Scope.getCurrentScope().getLog(getClass()).warning(message, e);
+            errorMessageHasBeenDisplayed = true;
+        }
+    }
+
     @Override
     public String getLicenseInfo() {
         if (licenseIsValid(LicenseTier.PRO.getSubject())) {
-            return "Liquibase Pro " + buildVersion + " (licensed through AWS License Manager)";
+            return "Liquibase Pro " + BUILD_VERSION + " (licensed through AWS License Manager)";
         } else {
-            return String.format(LIQUIBASE_OPEN_SOURCE_MSG, buildVersion);
+            return String.format(LIQUIBASE_OPEN_SOURCE_MSG, BUILD_VERSION);
         }
     }
 
@@ -142,7 +152,7 @@ public class AwsLicenseService implements LicenseService {
         try {
             endDate = dateFormat.parse(end);
         } catch (ParseException e) {
-            throw new RuntimeException(e);
+            throw new UnexpectedLiquibaseException(e);
         }
         return endDate;
     }
