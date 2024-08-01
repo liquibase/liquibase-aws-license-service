@@ -18,12 +18,3 @@ updates:
       separator: "-"
     labels:
       - "sdou"
-
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "hourly"
-    pull-request-branch-name:
-      separator: "-"
-    labels:
-      - "sdou"
