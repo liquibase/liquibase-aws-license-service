@@ -30,8 +30,8 @@ jobs:
               AWS_REGION: us-east-1
             with:
               registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
-              username: ${{ secrets.AWS_MP_ACCESS_KEY }}
-              password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+              username: ${{ secrets.GHA_AWS_KEY }}
+              password: ${{ secrets.GHA_AWS_KEY_ID }}
 
           - name: Get latest liquibase docker tag
             id: get_latest_tag
