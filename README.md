@@ -14,17 +14,17 @@ Extension which validates licenses using AWS License Manager
 3. We have AWS Fargate Cluster called `aws-mp-test-cluster` setup in this account where we can run the Liquibase commands.
 4. Most of the liquibase commands should already be defined under `Task Definitions` section in the ECS Cluster.
 5. All you do is navigate to `Tasks` tab, `Run New Task`, under `Family` select the task definition you want to run, and then click on `Create`.
-   ![](./docs/img/task_tab.png)
+   ![](./docs/image/task_tab.png)
 
-   ![](./docs/img/run_task.png)
+   ![](./docs/image/run_task.png)
 6. You can also run the task using the `aws-cli` command. 
    ```bash
    aws ecs run-task --cluster aws-mp-test-cluster --task-definition update-liquibase
    ```
 7. To check logs of the task, click on the task you just ran under `Tasks` tab. And then navigate to `Logs` tab.
-   ![](./docs/img/running_task.png)
+   ![](./docs/image/running_task.png)
 
-   ![](./docs/img/logs_tab.png) 
+   ![](./docs/image/logs_tab.png) 
 8. To add more commands to test in the `aws-mp-test-cluster`, you can add them in the `Task Definitions` section.
 9. Contact the DevOps team to get access to the `LiquibaseAWSMP` AWS account or any other help required.
 
