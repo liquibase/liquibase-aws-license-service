@@ -6,7 +6,7 @@ on:
       docker_tag:
         description: 'Tag for the Docker image'
         required: true
-        default: 'latest'
+        default: '' # Pass the value like 1.0.0
   pull_request:
     branches:
       - main
