@@ -43,5 +43,5 @@ jobs:
           - name: Build
             run: docker build -t 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }} .
 
-          - name: Push to Docker AWS MP
+          - name: Push to Docker Hub
             run: docker push 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }}
