@@ -1,6 +1,7 @@
 # Liquibase AWS License Service Extension
 Extension which validates licenses using AWS License Manager
 
+
 # :outbox_tray: Deploying the extension to Liquibase AWS Marketplace
 
 1. The `extension-update-pom.yml` file updates the version of the extension in the `pom.xml file` whenever there is a **new Liquibase Release**. It listens to the `repository_dispatch` event called `oss-released-version` from the `liquibase/liquibase` repository and then runs the workflow specified in the `extension-update-pom.yml` file. 
@@ -27,7 +28,3 @@ Extension which validates licenses using AWS License Manager
    ![](./docs/img/logs_tab.png) 
 8. To add more commands to test in the `aws-mp-test-cluster`, you can add them in the `Task Definitions` section.
 9. Contact the DevOps team to get access to the `LiquibaseAWSMP` AWS account or any other help required.
-
-# :blue_book: General Notes
-- This extension expects access to AWS, using standard AWS credentials mechanisms. Devs would need to get access to the following AWS account and set credentials from it: `LiquibaseAWSMP | 804611071420 | awsmp@liquibase.com`
-- This extension leverages a vulnerability in the `LicenseServiceFactory` in OSS/Pro. If that vulnerability is fixed, then this extension will no longer work. More info available [here](https://datical.atlassian.net/browse/DAT-12399).
