@@ -40,8 +40,18 @@ jobs:
               echo "LATEST_TAG=$LATEST_TAG"
               echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-          - name: Build
+          - name: Build Docker image
             run: docker build -t 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }} .
 
           - name: Push to Docker AWS MP
             run: docker push 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }}
+
+          - name: Submit Request for AWS MP Listing
+            env:
+              ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+              IMAGE_TAG: ${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }}
+              PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
+              CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+            run: |
+              chmod +x ./.github/utils/submit-aws-mp-listing.sh
+              ./.github/utils/submit-aws-mp-listing.sh
