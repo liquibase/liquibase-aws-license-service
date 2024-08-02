@@ -33,7 +33,3 @@ Extension which validates licenses using AWS License Manager
 8. To add more commands to test in the `aws-mp-test-cluster`, you can add them in the `Task Definitions` section.
 9. Contact the DevOps team to get access to the `LiquibaseAWSMP` AWS account or any other help required.
 
-# :blue_book: General Notes
-- This extension expects access to AWS, using standard AWS credentials mechanisms. Devs would need to get access to the following AWS account and set credentials from it: `LiquibaseAWSMP | 804611071420 | awsmp@liquibase.com`
-- This extension leverages a vulnerability in the `LicenseServiceFactory` in OSS/Pro. If that vulnerability is fixed, then this extension will no longer work. More info available [here](https://datical.atlassian.net/browse/DAT-12399).
-- This extension is released different than the other extensions because we need liquibase docker version to be released before deploying this extension to AWS Marketplace.

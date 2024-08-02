@@ -5,4 +5,4 @@ FROM liquibase/liquibase:4.29.1
 RUN lpm update && lpm add liquibase-aws-license-service
 
 # Default command to display Liquibase version
-CMD ["liquibase", "--version"]
+CMD ["liquibase", "--help"]
