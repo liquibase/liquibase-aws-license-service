@@ -1,0 +1,18 @@
+name: Update pom.xml with latest OSS Release
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [ oss-released-version ]
+
+jobs:
+  update-pom-oss-version:
+  runs-on:
+    ubuntu-latest:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update pom.xml with latest OSS version
+        uses: liquibase/build-logic/.github/workflows/extension-release-prepare.yml@v0.7.8
+        secrets: inherit

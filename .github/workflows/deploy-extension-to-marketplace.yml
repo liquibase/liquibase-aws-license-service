@@ -1,0 +1,56 @@
+name: Docker Build and Push to AWS Marketplace
+
+on:
+  workflow_dispatch:
+    inputs:
+      docker_tag:
+        description: 'Tag for the Docker image'
+        required: true
+        default: '' # Pass the value like 1.0.0
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+    paths:
+      - 'Dockerfile'
+
+jobs:
+  build:
+      if: github.actor == 'dependabot' || github.event_name == 'workflow_dispatch'
+      runs-on:
+          ubuntu-latest
+      steps:
+          - name: Checkout
+            uses: actions/checkout@v4
+
+          - name: Login to ECR Registry
+            uses: docker/login-action@v3
+            env:
+              AWS_REGION: us-east-1
+            with:
+              registry: ${{ secrets.AWS_MP_REGISTRY }}
+              username: ${{ secrets.AWS_MP_ACCESS_KEY }}
+              password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+
+          - name: Get latest liquibase docker tag
+            id: get_latest_tag
+            run: |
+              LATEST_TAG=$(grep -i "^FROM liquibase/liquibase:" Dockerfile | cut -d: -f2)
+              echo "LATEST_TAG=$LATEST_TAG"
+              echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+          - name: Build Docker image
+            run: docker build -t 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }} .
+
+          - name: Push to Docker AWS MP
+            run: docker push 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }}
+
+          - name: Submit Request for AWS MP Listing
+            env:
+              ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+              IMAGE_TAG: ${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }}
+              PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
+            run: |
+              chmod +x ./.github/utils/submit-aws-mp-listing.sh
+              ./.github/utils/submit-aws-mp-listing.sh
