@@ -161,9 +161,4 @@ public class AwsLicenseService implements LicenseService {
     public void reset() {
         lazyLoader.clearCache();
     }
-
-    @Override
-    public Date getExpirationDate() {
-        return getDate();
-    }
 }
