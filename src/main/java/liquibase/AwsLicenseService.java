@@ -164,11 +164,6 @@ public class AwsLicenseService implements LicenseService {
     }
 
     @Override
-    public Date getExpirationDate() {
-        return getDate();
-    }
-
-    @Override
     public String getInvalidLicenseMessage(String[] commandNames) {
         String url = "https://www.liquibase.com/aws-marketplace";
         return String.format("Using '%s' requires a valid Liquibase Pro license. Purchase a license at %s", StringUtils.join(commandNames, " "), url);
