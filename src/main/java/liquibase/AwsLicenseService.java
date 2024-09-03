@@ -10,6 +10,7 @@ import liquibase.license.Location;
 import liquibase.license.pro.DaticalTrueLicenseService;
 import liquibase.license.pro.LicenseTier;
 import liquibase.util.LiquibaseUtil;
+import org.apache.commons.lang3.StringUtils;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.services.licensemanager.LicenseManagerClient;
 import software.amazon.awssdk.services.licensemanager.model.*;
@@ -163,7 +164,8 @@ public class AwsLicenseService implements LicenseService {
     }
 
     @Override
-    public Date getExpirationDate() {
-        return getDate();
+    public String getInvalidLicenseMessage(String[] commandNames) {
+        String url = "https://www.liquibase.com/aws-marketplace";
+        return String.format("Using '%s' requires a valid Liquibase Pro license. Purchase a license at %s", StringUtils.join(commandNames, " "), url);
     }
 }
