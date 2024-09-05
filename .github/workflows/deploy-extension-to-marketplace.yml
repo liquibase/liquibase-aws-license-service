@@ -55,13 +55,13 @@ jobs:
               else
                 echo "TAG_EXISTS=true" >> $GITHUB_ENV
       
-          - name: Build Docker image
-            if: env.TAG_EXISTS == false
-            run: docker build -t 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }} .
-
-          - name: Push to Docker AWS MP
-            if: env.TAG_EXISTS == false
-            run: docker push 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }}
+#          - name: Build Docker image
+#            if: env.TAG_EXISTS == false
+#            run: docker build -t 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }} .
+#
+#          - name: Push to Docker AWS MP
+#            if: env.TAG_EXISTS == false
+#            run: docker push 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }}
 
           - name: Submit Request for AWS MP Listing
             if: env.TAG_EXISTS == false
