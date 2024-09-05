@@ -50,4 +50,3 @@ aws marketplace-catalog start-change-set \
       }
       ]';
 
-echo "New version submitted for verification"
