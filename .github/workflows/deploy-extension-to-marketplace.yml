@@ -68,7 +68,7 @@ jobs:
 #            run: docker push 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }}
 
           - name: Submit Request for AWS MP Listing
-            if: env.TAG_EXISTS == false
+#            if: env.TAG_EXISTS == false
             env:
               ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
               IMAGE_TAG: ${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }}
