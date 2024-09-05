@@ -22,7 +22,7 @@ updates:
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "hourly"
+      interval: "daily"
     pull-request-branch-name:
       separator: "-"
     labels:
