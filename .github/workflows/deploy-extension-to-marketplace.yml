@@ -54,11 +54,10 @@ jobs:
             id: check_tag
             run: |
               TAG_EXISTS=$(aws ecr describe-images \
-                --registry-id 709825985650 \
-                --repository-name liquibase/liquibase/liquibase-pro \
-                --image-ids imageTag=${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }} \
-                --region us-east-1 \
-                --output text)
+              --registry-id 709825985650 \
+              --repository-name liquibase/liquibase/liquibase-pro \
+              --region us-east-1 \
+              --image-ids imageTag=${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }} )
               if [ "$TAG_EXISTS" -eq 0 ]; then
                 echo "TAG_EXISTS=false" >> $GITHUB_ENV
               else
