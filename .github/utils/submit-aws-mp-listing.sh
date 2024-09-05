@@ -49,5 +49,3 @@ aws marketplace-catalog start-change-set \
         "Details": '"${DETAILS_JSON_STRING}"'
       }
       ]';
-
-echo "New version submitted for verification"
