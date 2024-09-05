@@ -22,6 +22,7 @@ jobs:
           ubuntu-latest
       env:
         AWS_REGION: us-east-1
+
       steps:
           - name: Checkout
             uses: actions/checkout@v4
@@ -41,6 +42,9 @@ jobs:
               echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
 
           - name: Check if tag exists in ECR
+            env:
+              AWS_ACCESS_KEY_ID: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+              AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
             id: check_tag
             run: |
               TAG_EXISTS=$(aws ecr describe-images \
