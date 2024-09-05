@@ -22,9 +22,6 @@ jobs:
           ubuntu-latest
       env:
         AWS_REGION: us-east-1
-        aws-access-key-id: ${{ secrets.AWS_MP_ACCESS_KEY }}
-        aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
-        aws-region: us-east-1
       steps:
           - name: Checkout
             uses: actions/checkout@v4
@@ -42,6 +39,13 @@ jobs:
               LATEST_TAG=$(grep -i "^FROM liquibase/liquibase:" Dockerfile | cut -d: -f2)
               echo "LATEST_TAG=$LATEST_TAG"
               echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+          - name: Configure AWS Credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+              aws-access-key-id: ${{ secrets.AWS_MP_ACCESS_KEY }}
+              aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+              aws-region: us-east-1
 
 #          - name: Check if tag exists in ECR
 #            env:
