@@ -9,7 +9,7 @@
     </parent>
 
     <artifactId>liquibase-aws-license-service</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.1-SNAPSHOT</version>
 
     <url>http://www.liquibase.com</url>
     <licenses>
