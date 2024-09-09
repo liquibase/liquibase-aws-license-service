@@ -5,7 +5,7 @@ Extension which validates licenses using AWS License Manager
 # :outbox_tray: Deploying the extension to Liquibase AWS Marketplace
 
 1. The `extension-update-pom.yml` file updates the version of the extension in the `pom.xml file` whenever there is a **new Liquibase Release**. It listens to the `repository_dispatch` event called `oss-released-version` from the `liquibase/liquibase` repository and then runs the workflow specified in the `extension-update-pom.yml` file.
-2. The LPM repository creates a PR when there is a new version of `liquibase-aws-license-service` : example : https://github.com/liquibase/liquibase-package-manager/pull/430/files#diff-0b0a9d274bd84c7dbfff4680de10599cd0d96458b06b74a925b2bcd3e3fc2fadR15. Make sure to review and merge the PR before proceeding.
+2. The dependabot in LPM repository creates a PR when there is a new version of `liquibase-aws-license-service` : example : https://github.com/liquibase/liquibase-package-manager/pull/430/files#diff-0b0a9d274bd84c7dbfff4680de10599cd0d96458b06b74a925b2bcd3e3fc2fadR15. Make sure to review and merge the PR before proceeding.
 3. The `dependabot.yml` file checks for new versions of dependencies for Docker and creates a pull request to update these dependencies, specifically for OSS.
 4. After we **manually** merge the Dependabot PR containing the new Docker OSS version, the `deploy-extension-to-marketplace.yml` file runs and publishes the extension to the `Liquibase AWS Marketplace`.
 
