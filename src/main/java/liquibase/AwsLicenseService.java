@@ -33,7 +33,7 @@ public class AwsLicenseService implements LicenseService {
 
             CheckoutLicenseResponse checkoutLicenseResponse = client.checkoutLicense(
                     CheckoutLicenseRequest.builder()
-                            .productSKU("prod-4ur64cg6hhkw2")
+                            .productSKU("prod-l2panlvbozc5e")
                             .checkoutType(CheckoutType.PROVISIONAL)
                             .keyFingerprint("aws:294406891311:AWS/Marketplace:issuer-fingerprint")
                             .entitlements(EntitlementData.builder()
