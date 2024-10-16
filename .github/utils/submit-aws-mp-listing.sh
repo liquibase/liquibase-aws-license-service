@@ -14,7 +14,7 @@ DETAILS_JSON=$(cat <<EOF
           "Details": {
             "EcrDeliveryOptionDetails": {
               "ContainerImages": [
-                "$ECR_REPOSITORY:$IMAGE_TAG"
+                "709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibasepro:$IMAGE_TAG"
               ],
               "CompatibleServices": [
                 "ECS", "EKS"
