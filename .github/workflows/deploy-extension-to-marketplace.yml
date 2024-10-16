@@ -108,24 +108,23 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
           aws-region: us-east-1
 
-      - name: Check if tag exists in ECR
+      - name: Check if ECR image tag exists
         id: check_tag
         run: |
-          set -e
-          TAG_EXISTS=$(aws ecr describe-images \
-            --registry-id ${{ secrets.REGISTRY_ID }} \
-            --repository-name ${{ secrets.ECR_REPOSITORY }} \
-            --region us-east-1 \
-            --image-ids imageTag=${{ github.event.inputs.docker_tag }} 2>&1 || true)
-
-          if [ $? -ne 0 ]; then
-            echo "TAG_EXISTS=false" >> $GITHUB_ENV
-            echo "Tag does not exist, proceeding with tag: ${{ github.event.inputs.docker_tag }}"
-          else
-            echo "TAG_EXISTS=true" >> $GITHUB_ENV
-            echo "Error: Docker tag '${{ github.event.inputs.docker_tag }}' already exists in ECR." >&2
-          exit 1
+          TAG_EXISTS=false
+          TAG_CHECK=$(aws ecr describe-images \
+              --registry-id ${{ secrets.REGISTRY_ID }} \
+              --repository-name ${{ secrets.ECR_REPOSITORY }} \
+              --region us-east-1 \
+              --image-ids imageTag=${{ github.event.inputs.docker_tag }} \
+              --query 'imageIds[*].imageTag' --output text || true)
+          
+          if [[ "$TAG_CHECK" == "${{ github.event.inputs.docker_tag }}" ]]; then
+              echo "Error: Tag '${{ github.event.inputs.docker_tag }}' already exists."
+              TAG_EXISTS=true
           fi
+          
+          echo "TAG_EXISTS=$TAG_EXISTS" >> $GITHUB_ENV
 
       - name: Build Docker image
         if: env.TAG_EXISTS == false
