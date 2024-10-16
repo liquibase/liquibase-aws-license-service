@@ -110,7 +110,7 @@ jobs:
           --registry-id ${{ secrets.REGISTRY_ID }} \
           --repository-name ${{ secrets.ECR_REPOSITORY }} \
           --region us-east-1 \
-          --image-ids imageTag=${{ steps.get_latest_tag.outputs.LATEST_TAG }})
+          --image-ids imageTag=${{ github.event.inputs.docker_tag }})
           if [ -n "$TAG_EXISTS" ]; then
             echo "TAG_EXISTS=true" >> $GITHUB_ENV
           else
