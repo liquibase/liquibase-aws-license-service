@@ -40,13 +40,37 @@ jobs:
               echo "LATEST_TAG=$LATEST_TAG"
               echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
 
+          - name: Configure AWS Credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+              aws-access-key-id: ${{ secrets.AWS_MP_ACCESS_KEY }}
+              aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+              aws-region: us-east-1
+
+          - name: Check if tag exists in ECR
+            id: check_tag
+            run: |
+              TAG_EXISTS=$(aws ecr describe-images \
+              --registry-id ${{ secrets.REGISTRY_ID }} \
+              --repository-name ${{ secrets.ECR_REPOSITORY }} \
+              --region us-east-1 \
+              --image-ids imageTag=${{ steps.get_latest_tag.outputs.LATEST_TAG }})
+              if [ -n "$TAG_EXISTS" ]; then
+                echo "TAG_EXISTS=true" >> $GITHUB_ENV
+              else
+                echo "TAG_EXISTS=false" >> $GITHUB_ENV
+              fi   
+
           - name: Build Docker image
-            run: docker build -t 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG }} .
+            if: env.TAG_EXISTS == false
+            run: docker build -t ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }} .
 
           - name: Push to Docker AWS MP
-            run: docker push 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
+            if: env.TAG_EXISTS == false
+            run: docker push ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
 
           - name: Submit Request for AWS MP Listing
+            if: env.TAG_EXISTS == false
             env:
               ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
               IMAGE_TAG: ${{ steps.get_latest_tag.outputs.LATEST_TAG }}
@@ -72,13 +96,37 @@ jobs:
           username: ${{ secrets.AWS_MP_ACCESS_KEY }}
           password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_MP_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+          aws-region: us-east-1
+
+      - name: Check if tag exists in ECR
+        id: check_tag
+        run: |
+          TAG_EXISTS=$(aws ecr describe-images \
+          --registry-id ${{ secrets.REGISTRY_ID }} \
+          --repository-name ${{ secrets.ECR_REPOSITORY }} \
+          --region us-east-1 \
+          --image-ids imageTag=${{ steps.get_latest_tag.outputs.LATEST_TAG }})
+          if [ -n "$TAG_EXISTS" ]; then
+            echo "TAG_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "TAG_EXISTS=false" >> $GITHUB_ENV
+          fi 
+
       - name: Build Docker image
-        run: docker build -t 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ github.event.inputs.docker_tag }} .
+        if: env.TAG_EXISTS == false
+        run: docker build -t ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.docker_tag }} .
 
       - name: Push to Docker AWS MP
-        run: docker push 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ github.event.inputs.docker_tag }}
+        if: env.TAG_EXISTS == false
+        run: docker push ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.docker_tag }}
 
       - name: Submit Request for AWS MP Listing
+        if: env.TAG_EXISTS == false
         env:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.event.inputs.docker_tag }}
