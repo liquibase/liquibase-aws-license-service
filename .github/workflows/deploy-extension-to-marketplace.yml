@@ -58,6 +58,7 @@ jobs:
               ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
               IMAGE_TAG: ${{ steps.get_latest_tag.outputs.LATEST_TAG }}
               PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
+              AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
             run: |
               chmod +x ./.github/utils/submit-aws-mp-listing.sh
               ./.github/utils/submit-aws-mp-listing.sh
@@ -97,6 +98,7 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.event.inputs.image_tag }}
           PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
+          AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
         run: |
           chmod +x ./.github/utils/submit-aws-mp-listing.sh
           ./.github/utils/submit-aws-mp-listing.sh
