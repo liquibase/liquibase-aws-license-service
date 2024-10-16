@@ -92,6 +92,7 @@ jobs:
 
       - name: Push to Docker AWS MP
         run: docker push ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
+        continue-on-error: true
 
       - name: Submit New Version Request for AWS MP Listing
         env:
