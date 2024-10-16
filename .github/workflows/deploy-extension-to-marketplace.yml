@@ -3,8 +3,8 @@ name: Docker Build and Push to AWS Marketplace
 on:
   workflow_dispatch:
     inputs:
-      docker_tag:
-        description: 'Tag for the Docker image'
+      image_tag:
+        description: 'This will submit a new version of the listing in AWS Marketplace.Image tag for the ECR liquibase/liquibasepro.'
         required: true
         default: '' # Pass the value like 1.0.0
   pull_request:
@@ -87,15 +87,15 @@ jobs:
           aws-region: us-east-1
 
       - name: Build Docker image
-        run: docker build -t ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.docker_tag }} .
+        run: docker build -t ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }} .
 
       - name: Push to Docker AWS MP
-        run: docker push ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.docker_tag }}
+        run: docker push ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
 
-      - name: Submit Request for AWS MP Listing
+      - name: Submit New Version Request for AWS MP Listing
         env:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.event.inputs.docker_tag }}
+          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
           PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
         run: |
           chmod +x ./.github/utils/submit-aws-mp-listing.sh
