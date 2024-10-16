@@ -47,35 +47,13 @@ jobs:
               aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
               aws-region: us-east-1
 
-          - name: Check if tag exists in ECR
-            id: check_tag
-            run: |
-              set -e
-              TAG_EXISTS=$(aws ecr describe-images \
-                --registry-id ${{ secrets.REGISTRY_ID }} \
-                --repository-name ${{ secrets.ECR_REPOSITORY }} \
-                --region us-east-1 \
-                --image-ids imageTag=${{ steps.get_latest_tag.outputs.LATEST_TAG }} 2>&1 || true)
-
-              if echo "$TAG_EXISTS" | grep -q "ImageNotFoundException"; then
-                echo "TAG_EXISTS=false" >> $GITHUB_ENV
-                echo "Tag does not exist, proceeding with tag: ${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
-              else
-                echo "TAG_EXISTS=true" >> $GITHUB_ENV
-                echo "Error: Docker tag '${{ steps.get_latest_tag.outputs.LATEST_TAG }}' already exists in ECR." >&2
-                exit 1
-              fi   
-
           - name: Build Docker image
-            if: env.TAG_EXISTS == false
             run: docker build -t ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }} .
 
           - name: Push to Docker AWS MP
-            if: env.TAG_EXISTS == false
             run: docker push ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
 
           - name: Submit Request for AWS MP Listing
-            if: env.TAG_EXISTS == false
             env:
               ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
               IMAGE_TAG: ${{ steps.get_latest_tag.outputs.LATEST_TAG }}
@@ -108,34 +86,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
           aws-region: us-east-1
 
-#      - name: Check if ECR image tag exists
-#        id: check_tag
-#        run: |
-#          TAG_EXISTS=false
-#          TAG_CHECK=$(aws ecr describe-images \
-#              --registry-id ${{ secrets.REGISTRY_ID }} \
-#              --repository-name ${{ secrets.ECR_REPOSITORY }} \
-#              --region us-east-1 \
-#              --image-ids imageTag=${{ github.event.inputs.docker_tag }} \
-#              --query 'imageIds[*].imageTag' --output text || true)
-#
-#          if [[ "$TAG_CHECK" == "${{ github.event.inputs.docker_tag }}" ]]; then
-#              echo "Error: Tag '${{ github.event.inputs.docker_tag }}' already exists."
-#              TAG_EXISTS=true
-#          fi
-#
-#          echo "TAG_EXISTS=$TAG_EXISTS" >> $GITHUB_ENV
-
       - name: Build Docker image
-#        if: env.TAG_EXISTS == false
         run: docker build -t ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.docker_tag }} .
 
       - name: Push to Docker AWS MP
-#        if: env.TAG_EXISTS == false
         run: docker push ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.docker_tag }}
 
       - name: Submit Request for AWS MP Listing
-#        if: env.TAG_EXISTS == false
         env:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.event.inputs.docker_tag }}
