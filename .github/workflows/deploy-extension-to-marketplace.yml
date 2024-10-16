@@ -118,13 +118,13 @@ jobs:
             --region us-east-1 \
             --image-ids imageTag=${{ github.event.inputs.docker_tag }} 2>&1 || true)
 
-          if echo "$TAG_EXISTS" | grep -q "ImageNotFoundException"; then
+          if [ $? -ne 0 ]; then
             echo "TAG_EXISTS=false" >> $GITHUB_ENV
             echo "Tag does not exist, proceeding with tag: ${{ github.event.inputs.docker_tag }}"
           else
             echo "TAG_EXISTS=true" >> $GITHUB_ENV
             echo "Error: Docker tag '${{ github.event.inputs.docker_tag }}' already exists in ECR." >&2
-            exit 1
+          exit 1
           fi
 
       - name: Build Docker image
