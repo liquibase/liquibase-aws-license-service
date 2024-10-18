@@ -2,8 +2,8 @@ name: Dependabot auto-merge
 
 on:
   pull_request:
-  paths:
-    - Dockerfile  # This ensures the workflow only runs when the Dockerfile is changed.
+    paths:
+      - Dockerfile  # This ensures the workflow only runs when the Dockerfile is changed.
 
 permissions:
   contents: write
