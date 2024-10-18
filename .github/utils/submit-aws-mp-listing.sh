@@ -32,6 +32,13 @@ EOF
 # Convert the JSON string to a single line for the AWS CLI command
 DETAILS_JSON_STRING="$(echo "${DETAILS_JSON}" | jq 'tostring';)";
 
+# Determine visibility based on dry run
+if [ "$DRY_RUN" == "true" ]; then
+  VISIBILITY="Restricted"
+else
+  VISIBILITY="Public"
+fi
+
 # Notify user of the submission process
 echo "Submitting new version for verification";
 
@@ -48,7 +55,7 @@ aws marketplace-catalog start-change-set \
         },
         "Details": '"${DETAILS_JSON_STRING}"'
         "ChangeTypeOptions": {
-                  "Visibility": "Restricted"
+                  "Visibility": "'"${VISIBILITY}"'"
         }
       }
       ]';
