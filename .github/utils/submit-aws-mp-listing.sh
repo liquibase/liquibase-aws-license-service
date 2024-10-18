@@ -14,7 +14,7 @@ DETAILS_JSON=$(cat <<EOF
           "Details": {
             "EcrDeliveryOptionDetails": {
               "ContainerImages": [
-                "$ECR_REPOSITORY:$IMAGE_TAG"
+                "$AWS_MP_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
               ],
               "CompatibleServices": [
                 "ECS", "EKS"
@@ -30,7 +30,14 @@ EOF
 );
 
 # Convert the JSON string to a single line for the AWS CLI command
-DETAILS_JSON_STRING="$(echo "${DETAILS_JSON}" | jq 'tostring';)";
+DETAILS_JSON_STRING="$(echo "${DETAILS_JSON}" | jq -c 'tostring';)";
+
+# Determine visibility based on dry run
+if [ "$DRY_RUN" == "true" ]; then
+  VISIBILITY="Restricted"
+else
+  VISIBILITY="Public"
+fi
 
 # Notify user of the submission process
 echo "Submitting new version for verification";
@@ -46,7 +53,8 @@ aws marketplace-catalog start-change-set \
           "Identifier": "'"${PRODUCT_ID}"'",
           "Type": "ContainerProduct@1.0"
         },
-        "Details": '"${DETAILS_JSON_STRING}"'
-      }
+        "Details": '"${DETAILS_JSON_STRING}"',
+          "TargetVisibility": "'"${VISIBILITY}"'"
+        }
       ]';
 
