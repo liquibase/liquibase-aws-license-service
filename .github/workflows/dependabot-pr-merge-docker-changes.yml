@@ -1,27 +1,26 @@
-name: Auto Merge Dependabot PRs for Dockerfile Changes
+name: Dependabot auto-merge
 
 on:
   pull_request:
-    types: [opened, synchronize]
-    paths:
-      - Dockerfile  # This ensures the workflow only runs when the Dockerfile is changed.
+  paths:
+    - Dockerfile  # This ensures the workflow only runs when the Dockerfile is changed.
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
-  auto-merge:
+  dependabot:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'liquibase/liquibase-aws-license-service'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure Git
-        run: |
-          git config --local user.email "64099989+liquibot@users.noreply.github.com"
-          git config --local user.name "liquibot"
-
-      - name: Automerge Dependabot PRs
-        if: github.actor == 'dependabot[bot]'  # Only run for Dependabot PRs
-        uses: pascalgn/automerge-action@v0.16.4
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
         with:
-          mergeMethod: squash  # Can also use 'merge' or 'rebase'
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+      - name: Enable auto-merge for Dependabot PRs
+        run: gh pr merge --merge "$PR_URL"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{github.event.pull_request.html_url}}
+          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
