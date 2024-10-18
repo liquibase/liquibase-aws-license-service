@@ -54,9 +54,7 @@ aws marketplace-catalog start-change-set \
           "Type": "ContainerProduct@1.0"
         },
         "Details": '"${DETAILS_JSON_STRING}"',
-        "ChangeTypeOptions": {
-          "Visibility": "'"${VISIBILITY}"'"
+          "TargetVisibility": "'"${VISIBILITY}"'"
         }
-      }
       ]';
 
