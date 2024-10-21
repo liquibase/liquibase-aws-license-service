@@ -3,8 +3,8 @@ name: Docker Build and Push to AWS Marketplace
 on:
   workflow_dispatch:
     inputs:
-      docker_tag:
-        description: 'Tag for the Docker image'
+      image_tag:
+        description: 'This will submit a new version of the listing in AWS Marketplace.Image tag for the ECR liquibase/liquibasepro.'
         required: true
         default: '' # Pass the value like 1.0.0
   pull_request:
@@ -17,7 +17,7 @@ on:
 
 jobs:
   build:
-      if: github.actor == 'dependabot' || github.event_name == 'workflow_dispatch'
+      if: github.actor == 'dependabot'
       runs-on:
           ubuntu-latest
       env:
@@ -40,17 +40,68 @@ jobs:
               echo "LATEST_TAG=$LATEST_TAG"
               echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
 
+          - name: Configure AWS Credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+              aws-access-key-id: ${{ secrets.AWS_MP_ACCESS_KEY }}
+              aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+              aws-region: us-east-1
+
           - name: Build Docker image
-            run: docker build -t 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }} .
+            run: docker build -t ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }} .
 
           - name: Push to Docker AWS MP
-            run: docker push 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibase-pro:${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }}
+            run: docker push ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
 
           - name: Submit Request for AWS MP Listing
             env:
               ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-              IMAGE_TAG: ${{ steps.get_latest_tag.outputs.LATEST_TAG || inputs.docker_tag }}
+              IMAGE_TAG: ${{ steps.get_latest_tag.outputs.LATEST_TAG }}
               PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
+              AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
             run: |
               chmod +x ./.github/utils/submit-aws-mp-listing.sh
               ./.github/utils/submit-aws-mp-listing.sh
+
+  dry-run:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on:
+      ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+      DRY_RUN: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to ECR Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.AWS_MP_REGISTRY }}
+          username: ${{ secrets.AWS_MP_ACCESS_KEY }}
+          password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_MP_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+          aws-region: us-east-1
+
+      - name: Build Docker image
+        run: docker build -t ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }} .
+
+      - name: Push to Docker AWS MP
+        run: docker push ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
+        continue-on-error: true
+
+      - name: Submit New Version Request for AWS MP Listing
+        env:
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+          PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
+          AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
+#          DRY_RUN: "true"
+        run: |
+          chmod +x ./.github/utils/submit-aws-mp-listing.sh
+          ./.github/utils/submit-aws-mp-listing.sh
