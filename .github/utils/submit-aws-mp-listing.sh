@@ -35,36 +35,17 @@ DETAILS_JSON_STRING="$(echo "${DETAILS_JSON}" | jq 'tostring';)";
 # Notify user of the submission process
 echo "Submitting new version for verification";
 
-
-# Check if DRY_RUN is true or false
-if [ "$DRY_RUN" == "false" ]; then
-  # Submit the new version for verification
-  aws marketplace-catalog start-change-set \
-      --catalog "AWSMarketplace" \
-      --region "${AWS_REGION}" \
-      --change-set '[
-        {
-          "ChangeType": "AddDeliveryOptions",
-          "Entity": {
-            "Identifier": "'"${PRODUCT_ID}"'",
-            "Type": "ContainerProduct@1.0"
-          },
-          "Details": '"${DETAILS_JSON_STRING}"'
-        }
+# Submit the new version for verification
+aws marketplace-catalog start-change-set \
+    --catalog "AWSMarketplace" \
+    --region "${AWS_REGION}" \
+    --change-set '[
+      {
+        "ChangeType": "AddDeliveryOptions",
+        "Entity": {
+          "Identifier": "'"${PRODUCT_ID}"'",
+          "Type": "ContainerProduct@1.0"
+        },
+        "Details": '"${DETAILS_JSON_STRING}"'
+      }
       ]';
-else
-  # Restrict the delivery options
-  aws marketplace-catalog start-change-set \
-      --catalog "AWSMarketplace" \
-      --region "${AWS_REGION}" \
-      --change-set '[
-        {
-          "ChangeType": "RestrictDeliveryOptions",
-          "Entity": {
-            "Identifier": "'"${PRODUCT_ID}"'",
-            "Type": "ContainerProduct@1.0"
-          },
-          "Details": '"${DETAILS_JSON_STRING}"'
-        }
-      ]';
-fi
