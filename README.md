@@ -12,6 +12,14 @@ Extension which validates licenses using AWS License Manager
    b. The workflow file `dependabot-pr-merge-docker-changes.yml` auto merges the dependabot PR containing the new Docker OSS version, 
    c. The `deploy-extension-to-marketplace.yml` file runs and publishes the extension to the `Liquibase AWS Marketplace`.
 
+# :crystal_ball: Testing Marketplace listing
+
+1. Run `Docker Build and Push to AWS Marketplace` https://github.com/liquibase/liquibase-aws-license-service/actions/workflows/deploy-extension-to-marketplace.yml with the "test_tag_number".
+2. NOTE: it is going to take a while for the new version to be approved. Approximate 30mins.
+3. After the workflow is run, navigate to AWS account `LiquibaseAWSMP` https://aws.amazon.com/marketplace/management/products/prod-l2panlvbozc5e@23/overview/versions
+4. Click on the "test_tag_number" Version you want to restrict and wait for the approval. NOTE: it is going to take a while for the version to be restricted. Approximate 15mins.
+5. Begin your testing from the task definitions you have https://us-east-1.console.aws.amazon.com/ecs/v2/task-definitions?region=us-east-1, after modifying your docker image to point to 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibasepro:{test_tag_number}
+
 # :hammer: How to test the liquibase commands with the Marketplace listing
 
 1. We have a `LiquibaseAWSMP` AWS account where we have listed the extension in the AWS Marketplace.
