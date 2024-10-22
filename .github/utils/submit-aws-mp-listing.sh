@@ -14,7 +14,7 @@ DETAILS_JSON=$(cat <<EOF
           "Details": {
             "EcrDeliveryOptionDetails": {
               "ContainerImages": [
-                "$ECR_REPOSITORY:$IMAGE_TAG"
+                "${ECR_REPOSITORY}:${IMAGE_TAG}"
               ],
               "CompatibleServices": [
                 "ECS", "EKS"
@@ -30,7 +30,7 @@ EOF
 );
 
 # Convert the JSON string to a single line for the AWS CLI command
-DETAILS_JSON_STRING="$(echo "${DETAILS_JSON}" | jq 'tostring';)";
+DETAILS_JSON_STRING="$(echo "${DETAILS_JSON}" | jq -c .)";
 
 # Notify user of the submission process
 echo "Submitting new version for verification";
