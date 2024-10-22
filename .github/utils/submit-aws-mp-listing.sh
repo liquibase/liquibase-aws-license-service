@@ -14,7 +14,7 @@ DETAILS_JSON=$(cat <<EOF
           "Details": {
             "EcrDeliveryOptionDetails": {
               "ContainerImages": [
-                "$ECR_REPOSITORY:$IMAGE_TAG"
+                "$AWS_MP_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
               ],
               "CompatibleServices": [
                 "ECS", "EKS"
