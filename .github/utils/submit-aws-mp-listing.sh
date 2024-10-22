@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # Construct a JSON string with details about the new version to be submitted to AWS Marketplace
-# This script is intended to be run as part of a GitHub Actions workflow
 DETAILS_JSON=$(cat <<EOF
 {
     "Version": {
@@ -14,7 +13,7 @@ DETAILS_JSON=$(cat <<EOF
           "Details": {
             "EcrDeliveryOptionDetails": {
               "ContainerImages": [
-                "$ECR_REPOSITORY:$IMAGE_TAG"
+                "${ECR_REPOSITORY}:${IMAGE_TAG}"
               ],
               "CompatibleServices": [
                 "ECS", "EKS"
@@ -29,8 +28,11 @@ DETAILS_JSON=$(cat <<EOF
 EOF
 );
 
+# Log the constructed JSON for debugging
+echo "Constructed JSON: ${DETAILS_JSON}"
+
 # Convert the JSON string to a single line for the AWS CLI command
-DETAILS_JSON_STRING="$(echo "${DETAILS_JSON}" | jq 'tostring';)";
+DETAILS_JSON_STRING="$(echo "${DETAILS_JSON}" | jq -c .)";
 
 # Notify user of the submission process
 echo "Submitting new version for verification";
@@ -49,5 +51,3 @@ aws marketplace-catalog start-change-set \
         "Details": '"${DETAILS_JSON_STRING}"'
       }
       ]';
-
-echo "New version submitted for verification"
