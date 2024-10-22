@@ -5,8 +5,8 @@
 DETAILS_JSON=$(cat <<EOF
 {
     "Version": {
-        "VersionTitle": "$IMAGE_TAG",
-        "ReleaseNotes": "https://docs.liquibase.com/start/release-notes/liquibase-release-notes/liquibase-$IMAGE_TAG.html"
+        "VersionTitle": "${IMAGE_TAG}",
+        "ReleaseNotes": "https://docs.liquibase.com/start/release-notes/liquibase-release-notes/liquibase-${IMAGE_TAG}.html"
       },
       "DeliveryOptions": [
         {
