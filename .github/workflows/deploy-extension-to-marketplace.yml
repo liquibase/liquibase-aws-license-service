@@ -72,13 +72,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Login to ECR Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.AWS_MP_REGISTRY }}
-          username: ${{ secrets.AWS_MP_ACCESS_KEY }}
-          password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -94,8 +87,6 @@ jobs:
 
       - name: Login to ECR Registry
         uses: docker/login-action@v3
-        env:
-          AWS_REGION: us-east-1
         with:
           registry: ${{ secrets.AWS_MP_REGISTRY }}
           username: ${{ secrets.AWS_MP_ACCESS_KEY }}
