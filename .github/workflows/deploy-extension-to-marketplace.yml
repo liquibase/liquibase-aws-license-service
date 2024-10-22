@@ -102,7 +102,7 @@ jobs:
           no-cache: true
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
+          tags: 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibasepro:${{ github.event.inputs.image_tag }}
         continue-on-error: true
 
       - name: Submit New Version Request for AWS MP Listing
