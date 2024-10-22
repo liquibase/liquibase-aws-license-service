@@ -104,12 +104,24 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
           aws-region: us-east-1
 
-      - name: Build Docker image
-        run: docker build -t ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }} .
+      - name: Build and Push Docker Image
+        env:
+          ECR_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          no-cache: true
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.get_latest_tag.outputs.LATEST_TAG }}
 
-      - name: Push to Docker AWS MP
-        run: docker push ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
-        continue-on-error: true
+#      - name: Build Docker image
+#        run: docker build -t ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }} .
+#
+#      - name: Push to Docker AWS MP
+#        run: docker push ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
+#        continue-on-error: true
 
       - name: Submit New Version Request for AWS MP Listing
         env:
