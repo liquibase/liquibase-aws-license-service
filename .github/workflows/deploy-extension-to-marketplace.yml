@@ -114,7 +114,7 @@ jobs:
 #              ./.github/utils/submit-aws-mp-listing.sh
 
   dry-run:
-    if: github.event_name == 'workflow_dispatch' && needs.check-OSS-version.outputs.OSS_VERSION_MATCH == true
+    if: github.event_name == 'workflow_dispatch' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true
     runs-on:
       ubuntu-latest
     needs: check-OSS-version
