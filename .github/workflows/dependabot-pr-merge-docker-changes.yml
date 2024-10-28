@@ -12,7 +12,7 @@ permissions:
 jobs:
   dependabot:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'liquibase/liquibase-aws-license-service'
+    if: github.actor == 'dependabot[bot]' && github.repository == 'liquibase/liquibase-aws-license-service'
     steps:
       - name: Dependabot metadata
         id: metadata
@@ -23,4 +23,4 @@ jobs:
         run: gh pr merge --merge "$PR_URL"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
-          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GH_TOKEN: ${{secrets.BOT_TOKEN}}
