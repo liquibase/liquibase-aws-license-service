@@ -16,6 +16,8 @@ on:
       - 'Dockerfile'
 
 jobs:
+#  https://datical.atlassian.net/browse/DAT-18638
+#  We run this job to ensure that the right Liquibase-version is in Dockerfile and pom prior to submitting a new version to AWS Marketplace for approval
   check-OSS-version:
     runs-on:
       ubuntu-latest
@@ -52,66 +54,66 @@ jobs:
         run: |
           echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
 
-#  build:
-#      if: github.actor == 'dependabot' && needs.check-OSS-version.outputs.OSS_VERSION_MATCH == true
-#      runs-on:
-#          ubuntu-latest
-#      needs: check-OSS-version
-#      env:
-#        AWS_REGION: us-east-1
-#      steps:
-#          - name: Checkout
-#            uses: actions/checkout@v4
-#
-#          - name: Configure AWS Credentials
-#            uses: aws-actions/configure-aws-credentials@v4
-#            with:
-#              aws-access-key-id: ${{ secrets.AWS_MP_ACCESS_KEY }}
-#              aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
-#              aws-region: us-east-1
-#
-#          - name: Set up QEMU
-#            uses: docker/setup-qemu-action@v3
-#
-#          - name: Set up Docker Buildx
-#            uses: docker/setup-buildx-action@v3
-#
-#          - name: Login to ECR Registry
-#            uses: docker/login-action@v3
-#            with:
-#              registry: ${{ secrets.AWS_MP_REGISTRY }}
-#              username: ${{ secrets.AWS_MP_ACCESS_KEY }}
-#              password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
-#
-#          - name: Get latest liquibase docker tag
-#            id: get_latest_tag
-#            run: |
-#              LATEST_TAG=$(grep -i "^FROM liquibase/liquibase:" Dockerfile | cut -d: -f2)
-#              echo "LATEST_TAG=$LATEST_TAG"
-#              echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
-#
-#          - name: Build and Push Docker Image
-#            env:
-#              ECR_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
-#            uses: docker/build-push-action@v6
-#            with:
-#              context: .
-#              file: Dockerfile
-#              no-cache: true
-#              push: true
-#              platforms: linux/amd64,linux/arm64
-#              tags: ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
-#            continue-on-error: true
-#
-#          - name: Submit Request for AWS MP Listing
-#            env:
-#              ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-#              IMAGE_TAG: ${{ steps.get_latest_tag.outputs.LATEST_TAG }}
-#              PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
-#              AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
-#            run: |
-#              chmod +x ./.github/utils/submit-aws-mp-listing.sh
-#              ./.github/utils/submit-aws-mp-listing.sh
+  build:
+      if: github.actor == 'dependabot' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true
+      runs-on:
+          ubuntu-latest
+      needs: check-OSS-version
+      env:
+        AWS_REGION: us-east-1
+      steps:
+          - name: Checkout
+            uses: actions/checkout@v4
+
+          - name: Configure AWS Credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+              aws-access-key-id: ${{ secrets.AWS_MP_ACCESS_KEY }}
+              aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+              aws-region: us-east-1
+
+          - name: Set up QEMU
+            uses: docker/setup-qemu-action@v3
+
+          - name: Set up Docker Buildx
+            uses: docker/setup-buildx-action@v3
+
+          - name: Login to ECR Registry
+            uses: docker/login-action@v3
+            with:
+              registry: ${{ secrets.AWS_MP_REGISTRY }}
+              username: ${{ secrets.AWS_MP_ACCESS_KEY }}
+              password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+
+          - name: Get latest liquibase docker tag
+            id: get_latest_tag
+            run: |
+              LATEST_TAG=$(grep -i "^FROM liquibase/liquibase:" Dockerfile | cut -d: -f2)
+              echo "LATEST_TAG=$LATEST_TAG"
+              echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+          - name: Build and Push Docker Image
+            env:
+              ECR_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
+            uses: docker/build-push-action@v6
+            with:
+              context: .
+              file: Dockerfile
+              no-cache: true
+              push: true
+              platforms: linux/amd64,linux/arm64
+              tags: ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
+            continue-on-error: true
+
+          - name: Submit Request for AWS MP Listing
+            env:
+              ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+              IMAGE_TAG: ${{ steps.get_latest_tag.outputs.LATEST_TAG }}
+              PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
+              AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
+            run: |
+              chmod +x ./.github/utils/submit-aws-mp-listing.sh
+              ./.github/utils/submit-aws-mp-listing.sh
 
   dry-run:
     if: github.event_name == 'workflow_dispatch' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true
