@@ -22,6 +22,9 @@ jobs:
     outputs:
       OSS_VERSION_MATCH: ${{ steps.check_versions.outputs.versions_match }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Install xmllint
         run: sudo apt-get update && sudo apt-get install -y libxml2-utils
 
