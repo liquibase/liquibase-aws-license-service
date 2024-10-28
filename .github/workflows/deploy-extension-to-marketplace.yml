@@ -17,7 +17,7 @@ on:
 
 jobs:
   check-OSS-version:
-    if: github.actor == 'dependabot'
+#    if: github.actor == 'dependabot'
     runs-on:
       ubuntu-latest
     steps:
