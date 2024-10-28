@@ -16,8 +16,39 @@ on:
       - 'Dockerfile'
 
 jobs:
+  check-OSS-version:
+    if: github.actor == 'dependabot'
+    runs-on:
+      ubuntu-latest
+    steps:
+      - name: Install xmllint
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
+      - name: Get liquibase version from pom.xml
+        id: pom_liquibase_version
+        run: |
+          POM_LIQUIBASE_VERSION=$(xmllint --xpath "/project/properties/liquibase.version/text()" pom.xml)
+          echo "Liquibase version: $POM_LIQUIBASE_VERSION"
+          echo "pom_liquibase_version=$POM_LIQUIBASE_VERSION" >> $GITHUB_ENV
+
+      - name: Get liquibase version from Dockerfile
+        id: dockerfile_liquibase_version
+        run: |
+          DOCKERFILE_LIQUIBASE_VERSION=$(grep -oP '^FROM liquibase/liquibase:\K[^\s]+' Dockerfile)
+          echo "Liquibase version: DOCKERFILE_LIQUIBASE_VERSION"
+          echo "dockerfile_liquibase_version=DOCKERFILE_LIQUIBASE_VERSION" >> $GITHUB_ENV
+
+      - name: Check if versions match
+        id: check_versions
+        run: |
+          if [ "$POM_LIQUIBASE_VERSION" == "$DOCKERFILE_LIQUIBASE_VERSION" ]; then
+            echo "versions_match=true" >> $GITHUB_ENV
+          else
+            echo "versions_match=false" >> $GITHUB_ENV
+          fi
+
   build:
-      if: github.actor == 'dependabot'
+      if: ${{ github.actor == 'dependabot' && env.versions_match == true }}
       runs-on:
           ubuntu-latest
       env:
@@ -77,7 +108,7 @@ jobs:
               ./.github/utils/submit-aws-mp-listing.sh
 
   dry-run:
-    if: github.event_name == 'workflow_dispatch'
+    if: ${{ github.event_name == 'workflow_dispatch' && env.versions_match == true }}
     runs-on:
       ubuntu-latest
     env:
