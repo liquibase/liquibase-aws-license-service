@@ -48,7 +48,7 @@ jobs:
           fi
 
   build:
-      if: github.actor == 'dependabot' && env.versions_match == true
+      if: github.actor == 'dependabot' && ${{ env.versions_match }} == true
       runs-on:
           ubuntu-latest
       env:
@@ -108,7 +108,7 @@ jobs:
               ./.github/utils/submit-aws-mp-listing.sh
 
   dry-run:
-    if: github.event_name == 'workflow_dispatch' && env.versions_match == true
+    if: github.event_name == 'workflow_dispatch' && ${{ env.versions_match }} == true
     runs-on:
       ubuntu-latest
     env:
