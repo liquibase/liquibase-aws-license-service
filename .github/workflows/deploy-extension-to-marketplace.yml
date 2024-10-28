@@ -38,7 +38,7 @@ jobs:
         id: dockerfile_liquibase_version
         run: |
           DOCKERFILE_LIQUIBASE_VERSION=$(grep -oP '^FROM liquibase/liquibase:\K[^\s]+' Dockerfile)
-          echo "Liquibase version: DOCKERFILE_LIQUIBASE_VERSION"
+          echo "Liquibase version: $DOCKERFILE_LIQUIBASE_VERSION"
           echo "dockerfile_liquibase_version=DOCKERFILE_LIQUIBASE_VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if versions match
