@@ -49,7 +49,7 @@ jobs:
           fi
 
       - name: Output version match result
-        run:
+        run: |
           echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
 
 #  build:
