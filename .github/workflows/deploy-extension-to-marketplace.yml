@@ -25,13 +25,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install xmllint
-        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
-
       - name: Get liquibase version from pom.xml
         id: pom_liquibase_version
         run: |
-          POM_LIQUIBASE_VERSION=$(xmllint --xpath "/project/properties/liquibase.version/text()" pom.xml)
+          POM_LIQUIBASE_VERSION=$(grep -oP '(?<=<liquibase.version>)[^<]+' pom.xml)
           echo "Liquibase version: $POM_LIQUIBASE_VERSION"
           echo "pom_liquibase_version=$POM_LIQUIBASE_VERSION" >> $GITHUB_OUTPUT
 
@@ -52,7 +49,7 @@ jobs:
           fi
 
 #  build:
-#      if: github.actor == 'dependabot' && env.versions_match == true
+#      if: github.actor == 'dependabot' && needs.check-OSS-version.outputs.OSS_VERSION_MATCH == true
 #      runs-on:
 #          ubuntu-latest
 #      needs: check-OSS-version
