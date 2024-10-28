@@ -47,7 +47,7 @@ jobs:
           else
             echo "versions_match=false" >> $GITHUB_OUTPUT
           fi
-
+          echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
 #  build:
 #      if: github.actor == 'dependabot' && needs.check-OSS-version.outputs.OSS_VERSION_MATCH == true
 #      runs-on:
