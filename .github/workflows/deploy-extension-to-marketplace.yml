@@ -128,7 +128,6 @@ jobs:
     needs: check-OSS-version
     env:
       AWS_REGION: us-east-1
-      DRY_RUN: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -172,7 +171,6 @@ jobs:
           IMAGE_TAG: ${{ github.event.inputs.image_tag }}
           PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
           AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
-#          DRY_RUN: "true"
         run: |
           chmod +x ./.github/utils/submit-aws-mp-listing.sh
           ./.github/utils/submit-aws-mp-listing.sh
