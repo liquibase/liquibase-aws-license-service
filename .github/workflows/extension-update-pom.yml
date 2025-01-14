@@ -7,6 +7,6 @@ on:
 
 jobs:
   update-pom-oss-version:
-    uses: liquibase/build-logic/.github/workflows/extension-release-prepare.yml@v0.7.8
+    uses: liquibase/build-logic/.github/workflows/extension-release-prepare.yml@main
     secrets: inherit
     
