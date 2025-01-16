@@ -12,7 +12,6 @@ RUN lpm update && \
     liquibase-aws-secrets-manager \
     liquibase-commercial-mongodb \
     liquibase-commercial-dynamodb \
-    liquibase-checks \
     --global
 
 
