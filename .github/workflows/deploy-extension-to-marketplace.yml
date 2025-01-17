@@ -18,8 +18,6 @@ on:
       - main
     types:
       - closed
-    paths:
-      - 'Dockerfile'
 
 jobs:
 #  https://datical.atlassian.net/browse/DAT-18638
@@ -61,7 +59,7 @@ jobs:
           echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
 
   build:
-      if: github.actor == 'dependabot' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true
+      if: github.actor == 'dependabot' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true && ${{ inputs.dry_run == false }}
       runs-on:
           ubuntu-latest
       permissions:
