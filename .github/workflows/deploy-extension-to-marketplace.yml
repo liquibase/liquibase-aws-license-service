@@ -18,8 +18,6 @@ on:
       - main
     types:
       - closed
-    paths:
-      - 'Dockerfile'
 
 jobs:
 #  https://datical.atlassian.net/browse/DAT-18638
