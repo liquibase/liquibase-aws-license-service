@@ -61,7 +61,7 @@ jobs:
           echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
 
   build:
-      if: github.actor == 'dependabot' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true && ${{ inputs.dry_run == false }}
+      if: github.actor == 'dependabot' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true && ${{ inputs.dry_run }} == 'false'
       runs-on:
           ubuntu-latest
       permissions:
@@ -110,6 +110,7 @@ jobs:
               no-cache: true
               push: true
               platforms: linux/amd64,linux/arm64
+              provenance: false # Disables the generation of provenance attestation
               tags: ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
             continue-on-error: true
 
@@ -166,6 +167,7 @@ jobs:
           no-cache: true
           push: true
           platforms: linux/amd64,linux/arm64
+          provenance: false # Disables the generation of provenance attestation
           tags: ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
         continue-on-error: true
 
