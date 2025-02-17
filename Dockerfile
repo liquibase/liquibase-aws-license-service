@@ -8,10 +8,7 @@ ENV DOCKER_AWS_LIQUIBASE=true
 RUN lpm update && \
     lpm add \
     liquibase-aws-license-service \
-    liquibase-s3-extension \
-    liquibase-aws-secrets-manager \
-    liquibase-commercial-mongodb \
-    liquibase-commercial-dynamodb \
+    liquibase-aws-extension \
     --global
 
 
