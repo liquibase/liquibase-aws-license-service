@@ -117,7 +117,7 @@ jobs:
               ./.github/utils/submit-aws-mp-listing.sh
 
   dry-run:
-    if: ${{ inputs.dry_run == 'true' }}
+    if: ${{ inputs.dry_run == true }}
     runs-on:
       ubuntu-latest
     permissions:
