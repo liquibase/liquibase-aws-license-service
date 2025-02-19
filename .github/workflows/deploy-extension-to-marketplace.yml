@@ -53,7 +53,7 @@ jobs:
           echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
 
   build:
-      if: github.actor == 'dependabot' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true && ${{ inputs.dry_run }} == false
+      if: github.actor == 'dependabot[bot]' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true && ${{ inputs.dry_run }} == false
       runs-on:
           ubuntu-latest
       permissions:
