@@ -53,7 +53,7 @@ jobs:
           echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
 
   build:
-      if: github.actor == 'dependabot' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true && ${{ inputs.dry_run }} == 'false'
+      if: ${{ inputs.dry_run == false }}
       runs-on:
           ubuntu-latest
       permissions:
@@ -117,7 +117,7 @@ jobs:
               ./.github/utils/submit-aws-mp-listing.sh
 
   dry-run:
-    if: ${{ inputs.dry_run == 'true' }}
+    if: ${{ inputs.dry_run == true }}
     runs-on:
       ubuntu-latest
     permissions:
@@ -166,7 +166,7 @@ jobs:
       - name: Submit New Version Request for AWS MP Listing
         env:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+          IMAGE_TAG: "${{ github.event.inputs.image_tag }}-latest"
           PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
           AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
         run: |
