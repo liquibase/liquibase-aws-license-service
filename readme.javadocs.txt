@@ -1,0 +1,1 @@
+Javadoc not available for liquibase-aws-license-service
