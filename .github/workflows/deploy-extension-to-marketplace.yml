@@ -148,7 +148,7 @@ jobs:
           registry: ${{ secrets.AWS_MP_REGISTRY }}
           username: ${{ secrets.AWS_MP_ACCESS_KEY }}
           password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
-
+          
       - name: Build and Push Docker Image
         env:
           ECR_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
@@ -166,7 +166,7 @@ jobs:
       - name: Submit New Version Request for AWS MP Listing
         env:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: "${{ github.event.inputs.image_tag }}-latest"
+          IMAGE_TAG: "${{ github.event.inputs.image_tag }}"
           PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
           AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
         run: |
