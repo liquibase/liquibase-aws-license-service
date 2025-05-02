@@ -148,13 +148,6 @@ jobs:
           registry: ${{ secrets.AWS_MP_REGISTRY }}
           username: ${{ secrets.AWS_MP_ACCESS_KEY }}
           password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
-
-      - name: debug     
-        run: |
-          echo "REGISTRY=${{ secrets.AWS_MP_REGISTRY }}"
-          echo "REPOSITORY=${{ secrets.ECR_REPOSITORY }}"
-          echo "TAG=${{ github.event.inputs.image_tag }}"
-
           
       - name: Build and Push Docker Image
         env:
