@@ -14,4 +14,3 @@ RUN lpm update && \
 
 # Default command to display Liquibase version
 CMD ["liquibase", "--help"]
-
