@@ -4,7 +4,8 @@ on:
   pull_request:
     paths:
       - Dockerfile  # This ensures the workflow only runs when the Dockerfile is changed.
-
+  schedule:
+    - cron: '0 * * * *'  # Runs at the top of every hour (UTC)
 permissions:
   contents: write
   pull-requests: write
