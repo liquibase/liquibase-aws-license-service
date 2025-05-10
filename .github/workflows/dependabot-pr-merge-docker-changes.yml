@@ -4,8 +4,6 @@ on:
   pull_request:
     paths:
       - Dockerfile  # This ensures the workflow only runs when the Dockerfile is changed.
-  schedule:
-    - cron: '*/15 * * * *'  # Runs at the top of every hour (UTC)
 permissions:
   contents: write
   pull-requests: write
@@ -13,7 +11,7 @@ permissions:
 jobs:
   dependabot:
     runs-on: ubuntu-latest
-    if: github.repository == 'liquibase/liquibase-aws-license-service'
+    if: github.actor == 'dependabot[bot]' && github.repository == 'liquibase/liquibase-aws-license-service'
     steps:
       - name: Dependabot metadata
         id: metadata
