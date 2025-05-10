@@ -12,7 +12,7 @@ permissions:
 jobs:
   dependabot:
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]' && github.repository == 'liquibase/liquibase-aws-license-service'
+    if: github.repository == 'liquibase/liquibase-aws-license-service'
     steps:
       - name: Dependabot metadata
         id: metadata
