@@ -22,3 +22,4 @@ jobs:
         run: gh pr merge --merge "$PR_URL"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
+          GH_TOKEN: ${{secrets.LIQUIBOT_PAT_GPM_ACCESS}}
