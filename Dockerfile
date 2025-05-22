@@ -1,5 +1,5 @@
 # Use the official Liquibase image as the base
-FROM liquibase/liquibase:4.31.1
+FROM liquibase/liquibase:4.32.0
 
 # Marker which indicates this is a Liquibase docker container
 ENV DOCKER_AWS_LIQUIBASE=true
