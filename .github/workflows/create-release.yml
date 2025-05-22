@@ -7,6 +7,14 @@ on:
       - main
       - master
 
+permissions:
+  contents: write
+  pull-requests: read
+  issues: read
+  statuses: read
+  actions: read
+  security-events: write
+  
 jobs:
   create-release:
     uses: liquibase/build-logic/.github/workflows/create-release.yml@main
