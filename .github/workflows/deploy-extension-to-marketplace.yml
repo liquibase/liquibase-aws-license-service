@@ -109,7 +109,7 @@ jobs:
           - name: Submit Request for AWS MP Listing
             env:
               ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-              IMAGE_TAG: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}-latest"
+              IMAGE_TAG: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
               PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
               AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
             run: |
