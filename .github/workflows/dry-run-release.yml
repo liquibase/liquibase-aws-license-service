@@ -56,6 +56,9 @@ jobs:
     needs: dry-run-get-draft-release
     uses: liquibase/build-logic/.github/workflows/extension-release-published.yml@main
     secrets: inherit
+    permissions:
+      id-token: write
+      contents: read
     with:
       dry_run: true
       dry_run_version: "0.0.${{ github.run_number }}"
