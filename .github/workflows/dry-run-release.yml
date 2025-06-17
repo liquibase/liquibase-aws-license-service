@@ -58,7 +58,9 @@ jobs:
     secrets: inherit
     permissions:
       id-token: write
-      contents: read
+      contents: write
+      packages: write
+      pull-requests: write
     with:
       dry_run: true
       dry_run_version: "0.0.${{ github.run_number }}"
