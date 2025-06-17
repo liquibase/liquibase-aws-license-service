@@ -13,10 +13,12 @@ permissions:
 
 jobs:
   nightly-build:
-    uses: liquibase/build-logic/.github/workflows/pro-extension-test.yml@main
+    uses: liquibase/build-logic/.github/workflows/pro-extension-test.yml@DAT-19747
     permissions:
       contents: write
       id-token: write
+      packages: read
+      pull-requests: write
     with:
       nightly: true
     secrets: inherit
