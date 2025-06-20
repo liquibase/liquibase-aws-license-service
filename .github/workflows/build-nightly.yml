@@ -6,14 +6,14 @@ on:
   schedule:
     - cron: "0 7 * * 1-5"
 
-permissions:
-  contents: read
-  pull-requests: write
-  packages: read
-
 jobs:
   nightly-build:
     uses: liquibase/build-logic/.github/workflows/pro-extension-test.yml@main
+    permissions:
+      contents: write
+      id-token: write
+      packages: read
+      pull-requests: write
     with:
       nightly: true
     secrets: inherit
