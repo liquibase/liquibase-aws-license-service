@@ -33,8 +33,7 @@ jobs:
           app-id: ${{ secrets.LIQUIBASE_GITHUB_APP_ID }}
           private-key: ${{ secrets.LIQUIBASE_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          permission-contents: read
-
+          
       - name: Get Draft Release ID
         id: get_draft_release_id
         run: |
