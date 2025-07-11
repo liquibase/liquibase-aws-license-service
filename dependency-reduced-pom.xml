@@ -8,7 +8,7 @@
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>liquibase-aws-license-service</artifactId>
-  <version>1.5.0</version>
+  <version>1.6.0</version>
   <url>http://www.liquibase.com</url>
   <licenses>
     <license>
@@ -83,7 +83,7 @@
     <maven.compiler.target>1.8</maven.compiler.target>
     <sonar.tests>src/test/groovy</sonar.tests>
     <maven.compiler.source>1.8</maven.compiler.source>
-    <liquibase.version>4.32.0</liquibase.version>
+    <liquibase.version>4.33.0</liquibase.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 </project>
