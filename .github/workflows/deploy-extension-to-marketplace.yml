@@ -95,9 +95,9 @@ jobs:
           - name: Login to ECR Registry
             uses: docker/login-action@v3
             with:
-              registry: ${{ secrets.AWS_MP_REGISTRY }}
-              username: ${{ env.AWS_MP_ACCESS_KEY }}
-              password: ${{ env.AWS_MP_ACCESS_KEY_ID }}
+              registry: ${{ env.AWS_MP_REGISTRY }}
+              username: ${{ env.AWS_MP_ACCESS_KEY_ID }}
+              password: ${{ env.AWS_MP_ACCESS_KEY }}
 
           - name: Get latest liquibase docker tag
             id: get_latest_tag
@@ -108,7 +108,7 @@ jobs:
 
           - name: Build and Push Docker Image
             env:
-              ECR_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
+              ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
             uses: docker/build-push-action@v6
             with:
               context: .
@@ -117,15 +117,15 @@ jobs:
               push: true
               platforms: linux/amd64,linux/arm64
               provenance: false # Disables the generation of provenance attestation
-              tags: ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
+              tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
             continue-on-error: true
 
           - name: Submit Request for AWS MP Listing
             env:
-              ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+              ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
               IMAGE_TAG: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
-              PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
-              AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
+              PRODUCT_ID: ${{ env.PRODUCT_ID }}
+              AWS_MP_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
             run: |
               chmod +x ./.github/utils/submit-aws-mp-listing.sh
               ./.github/utils/submit-aws-mp-listing.sh
@@ -173,13 +173,13 @@ jobs:
       - name: Login to ECR Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.AWS_MP_REGISTRY }}
-          username: ${{ secrets.AWS_MP_ACCESS_KEY }}
-          password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+          registry: ${{ env.AWS_MP_REGISTRY }}
+          username: ${{ env.AWS_MP_ACCESS_KEY }}
+          password: ${{ env.AWS_MP_ACCESS_KEY_ID }}
           
       - name: Build and Push Docker Image
         env:
-          ECR_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
+          ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -188,15 +188,15 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           provenance: false # Disables the generation of provenance attestation
-          tags: ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
+          tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
         continue-on-error: true
 
       - name: Submit New Version Request for AWS MP Listing
         env:
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
           IMAGE_TAG: "${{ github.event.inputs.image_tag }}"
-          PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
-          AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
+          PRODUCT_ID: ${{ env.PRODUCT_ID }}
+          AWS_MP_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
         run: |
           chmod +x ./.github/utils/submit-aws-mp-listing.sh
           ./.github/utils/submit-aws-mp-listing.sh
