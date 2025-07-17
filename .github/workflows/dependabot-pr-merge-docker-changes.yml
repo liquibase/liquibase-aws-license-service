@@ -7,12 +7,28 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write # Required for OIDC authentication
 
 jobs:
   dependabot:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]' && github.repository == 'liquibase/liquibase-aws-license-service'
     steps:
+
+      - name: Configure AWS credentials for vault access
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Get secrets from vault
+        id: vault-secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,/vault/liquibase
+          parse-json-secrets: true
+
       - name: Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@v2
@@ -22,4 +38,4 @@ jobs:
         run: gh pr merge --merge "$PR_URL"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
-          GH_TOKEN: ${{secrets.LIQUIBOT_PAT_GPM_ACCESS}}
+          GH_TOKEN: ${{env.LIQUIBOT_PAT_GPM_ACCESS}}
