@@ -23,7 +23,7 @@ jobs:
       OSS_VERSION_MATCH: ${{ steps.check_versions.outputs.versions_match }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Get liquibase version from pom.xml
         id: pom_liquibase_version
@@ -64,7 +64,7 @@ jobs:
         AWS_REGION: us-east-1
       steps:
           - name: Checkout
-            uses: actions/checkout@v4
+            uses: actions/checkout@v5
 
           - name: Configure AWS credentials for vault access
             uses: aws-actions/configure-aws-credentials@v4
@@ -142,7 +142,7 @@ jobs:
       AWS_REGION: us-east-1
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configure AWS credentials for vault access
         uses: aws-actions/configure-aws-credentials@v4
