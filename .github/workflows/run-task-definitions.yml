@@ -1,109 +1,164 @@
-name: Run Task definitions after AWS Marketplace approval
+name: Run ECS task definitions after AWS Marketplace approval
 
 on:
   workflow_dispatch:
     inputs:
-      image-tag:
+      image_tag:
         description: "Liquibase Pro Docker image tag (full URI or tag)"
         required: true
-
-  pull_request:
-    types: [opened, synchronize]
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  run-task-definition:
+  run-core-tasks:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - family: version-command
+            container_name: Liquibase-Pro
+          - family: update-command-dynamodb
+            container_name: Liquibase-Pro
+
     env:
       CLUSTER_NAME: aws-mp-test-cluster
       SUBNETS: subnet-e01f40ad,subnet-372ba268,subnet-a45ad6c2
-      FAMILY: version-command
-      CONTAINER_NAME: Liquibase-Pro
       ECR_PREFIX: 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibasepro
 
     steps:
-      - name: Show input
-        run: echo "ImageTag=${{ inputs.image-tag }}"
+      - name: Show inputs
+        run: |
+          echo "IMAGE_TAG=${{ inputs.image_tag }}"
+          echo "FAMILY=${{ matrix.family }}"
+          echo "CONTAINER_NAME=${{ matrix.container_name }}"
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_MARKETPLACE_GITHUB_OIDC_ROLE_ARN_INFRASTRUCTURE }}
           aws-region: us-east-1
           role-session-name: AWSMarketplaceApprovalSession
 
-      - name: Ensure jq present
+      - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Determine IMAGE_URI (accept full URI or tag)
-        id: determine-image
+      - name: Resolve IMAGE_URI (accept full URI or tag)
+        id: resolve_image
         shell: bash
         run: |
-          IMAGE_TAG_INPUT="${{ inputs.image-tag }}"
-          if [[ "$IMAGE_TAG_INPUT" == *".amazonaws.com"* || "$IMAGE_TAG_INPUT" == *".dkr.ecr."* ]]; then
-            IMAGE_URI="$IMAGE_TAG_INPUT"
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          if [[ "$IMAGE_TAG" == *".amazonaws.com"* || "$IMAGE_TAG" == *".dkr.ecr."* ]]; then
+            IMAGE_URI="$IMAGE_TAG"
           else
-            IMAGE_URI="${ECR_PREFIX}:${IMAGE_TAG_INPUT}"
+            IMAGE_URI="${ECR_PREFIX}:${IMAGE_TAG}"
           fi
-          echo "IMAGE_URI=$IMAGE_URI"
-          echo "IMAGE_URI=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
-      - name: Pull current task def and build clean JSON with new image
+      - name: Build registerable task definition
+        env:
+          FAMILY: ${{ matrix.family }}
+          CONTAINER_NAME: ${{ matrix.container_name }}
         run: |
           aws ecs describe-task-definition --task-definition "$FAMILY" --query taskDefinition > base.json
+          jq --arg IMG "${{ steps.resolve_image.outputs.image_uri }}" --arg NAME "$CONTAINER_NAME" '
+            .containerDefinitions |= (map(if .name == $NAME then .image = $IMG else . end))
+          ' base.json > _tmp.json
+          jq 'del(
+                .taskDefinitionArn,
+                .requiresAttributes,
+                .compatibilities,
+                .revision,
+                .status,
+                .registeredAt,
+                .registeredBy,
+                .deregisteredAt
+              )' _tmp.json > task-def.json
 
-          # Build a clean registerable object (strip read-only fields) and swap image
-          jq --arg IMG "${{ steps.determine-image.outputs.IMAGE_URI }}" '
-            {
-              family,
-              taskRoleArn,
-              executionRoleArn,
-              networkMode,
-              containerDefinitions: (
-                .containerDefinitions
-                | map(if .name == env.CONTAINER_NAME then .image = $IMG else . end)
-              ),
-              volumes,
-              placementConstraints,
-              requiresCompatibilities,
-              cpu,
-              memory,
-              runtimePlatform
-            }
-          ' base.json > task-def.json
-
-          echo "Prepared task-def.json:"
-          jq '.containerDefinitions[] | {name, image}' task-def.json
-
-      - name: Register new task def revision
-        id: register-task
+      - name: Register new task definition
+        id: register
         run: |
           aws ecs register-task-definition --cli-input-json file://task-def.json > reg.json
-          NEW_ARN=$(jq -r '.taskDefinition.taskDefinitionArn' reg.json)
-          echo "NEW_TASK_DEF_ARN=$NEW_ARN" | tee -a "$GITHUB_OUTPUT"
+          TASK_DEF_ARN=$(jq -r '.taskDefinition.taskDefinitionArn' reg.json)
+          echo "task_def_arn=$TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
 
-      - name: Run task (latest revision)
-        id: run-task
+      - name: Run task
+        id: run_task
         run: |
           aws ecs run-task \
             --cluster "$CLUSTER_NAME" \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],assignPublicIp=ENABLED}" \
-            --task-definition "${{ steps.register-task.outputs.NEW_TASK_DEF_ARN }}" \
+            --task-definition "${{ steps.register.outputs.task_def_arn }}" \
             --count 1 > run.json
-
           TASK_ARN=$(jq -r '.tasks[0].taskArn' run.json)
-          echo "TASK_ARN=$TASK_ARN" | tee -a "$GITHUB_OUTPUT"
+          echo "task_arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for task to finish and report exit code
+      - name: Wait and check exit code
         run: |
-          aws ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks "${{ steps.run-task.outputs.TASK_ARN }}"
-          aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "${{ steps.run-task.outputs.TASK_ARN }}" > desc.json
+          aws ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}"
+          aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}" > desc.json
           EXIT_CODE=$(jq -r '.tasks[0].containers[0].exitCode' desc.json)
-          REASON=$(jq -r '.tasks[0].stoppedReason' desc.json)
-          echo "Task exit code: ${EXIT_CODE}"
-          echo "Stopped reason: ${REASON}"
+          echo "Exit code: $EXIT_CODE"
+          test "${EXIT_CODE}" = "0"
+
+  run-dropall-task:
+    runs-on: ubuntu-latest
+    needs: run-core-tasks
+    env:
+      CLUSTER_NAME: aws-mp-test-cluster
+      SUBNETS: subnet-e01f40ad,subnet-372ba268,subnet-a45ad6c2
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_MARKETPLACE_GITHUB_OIDC_ROLE_ARN_INFRASTRUCTURE }}
+          aws-region: us-east-1
+          role-session-name: AWSMarketplaceApprovalSession
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Describe and prepare dropall task
+        run: |
+          aws ecs describe-task-definition --task-definition dropall-command --query taskDefinition > base.json
+          jq 'del(
+                .taskDefinitionArn,
+                .requiresAttributes,
+                .compatibilities,
+                .revision,
+                .status,
+                .registeredAt,
+                .registeredBy,
+                .deregisteredAt
+              )' base.json > task-def.json
+
+      - name: Register new dropall revision
+        id: register
+        run: |
+          aws ecs register-task-definition --cli-input-json file://task-def.json > reg.json
+          TASK_DEF_ARN=$(jq -r '.taskDefinition.taskDefinitionArn' reg.json)
+          echo "task_def_arn=$TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Run dropall task
+        id: run_task
+        run: |
+          aws ecs run-task \
+            --cluster "$CLUSTER_NAME" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],assignPublicIp=ENABLED}" \
+            --task-definition "${{ steps.register.outputs.task_def_arn }}" \
+            --count 1 > run.json
+          TASK_ARN=$(jq -r '.tasks[0].taskArn' run.json)
+          echo "task_arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Wait and check exit code
+        run: |
+          aws ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}"
+          aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}" > desc.json
+          EXIT_CODE=$(jq -r '.tasks[0].containers[0].exitCode' desc.json)
+          echo "Exit code: $EXIT_CODE"
           test "${EXIT_CODE}" = "0"
