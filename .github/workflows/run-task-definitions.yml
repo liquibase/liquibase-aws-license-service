@@ -6,6 +6,8 @@ on:
       image-tag:
         description: "Liquibase Pro Docker image tag (full URI or tag)"
         required: true
+  pull_request:
+    types: [opened, synchronize]
 
 permissions:
   id-token: write
