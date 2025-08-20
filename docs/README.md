@@ -4,8 +4,13 @@
 
 # :outbox_tray: Deploying the extension to Liquibase AWS Marketplace
 
+> NOTE: The below process may slightly change after OSS/PRO split. 
+
 1. The `extension-update-pom.yml` file updates the Liquibase version of the extension in the `pom.xml` file whenever there is a **new Liquibase Release**. It listens to the `repository_dispatch` event called `oss-released-version` from the `liquibase/liquibase` repository and then runs the workflow specified in the `extension-update-pom.yml` file.
 2. Make sure both the dependabot PR's for changes in `pom.xml` and `Dockerfile` are merged before you **manually test** the workflow following the doc mentioned below under ":crystal_ball: Testing Marketplace listing" [deploy-extension-to-marketplace.yml](https://github.com/liquibase/liquibase-aws-license-service/blob/main/.github/workflows/deploy-extension-to-marketplace.yml)
+
+> NOTE: The below process will remain the same after OSS/PRO split.
+
 3. The below steps run on every PRO release.
    - **a.** The `dependabot.yml` file checks for new versions of dependencies for `package-ecosystem: "docker"` and creates a pull request to update the dependencies, specifically for new version of liquibase docker .
    - **b.** The workflow file `dependabot-pr-merge-docker-changes.yml` auto merges the dependabot PR containing the new Docker OSS version
