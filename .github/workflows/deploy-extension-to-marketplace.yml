@@ -101,7 +101,11 @@ jobs:
           registry: ${{ env.AWS_MP_REGISTRY }}
           username: ${{ env.AWS_MP_ACCESS_KEY }}
           password: ${{ env.AWS_MP_ACCESS_KEY_ID }}
-          
+
+      - name: Random test image tag
+        id: random_tag
+        run: echo "random_tag=test-$(date +%s)" >> $GITHUB_ENV
+
       - name: Build and Push Docker Image
         env:
           ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
@@ -113,7 +117,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           provenance: false # Disables the generation of provenance attestation
-          tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
+          # the tags can be either from input or random_tag
+          tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag || env.random_tag }}
         continue-on-error: true
 
       - name: Submit New Version Request for AWS MP Listing
@@ -127,7 +132,8 @@ jobs:
           ./.github/utils/submit-aws-mp-listing.sh
           
   build:
-      # run this job when it's an actual build deploy and when there is no repository_dispatch. We do that because we need the QA to test the version before it is deployed. 
+      # Run this job only when it's not a dry_run and no repository_dispatch is triggered.
+      # This ensures QA can run workflow file "run-task-definitions" before the real version is deployed.
       if: ${{ inputs.dry_run == false && github.event.action != 'trigger-aws-marketplace-listing' }}
       runs-on:
           ubuntu-latest

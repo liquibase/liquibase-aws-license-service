@@ -1,3 +1,5 @@
+# This workflow will be run manually by QA after the deploy-extension-to-marketplace.yml workflow is run and AWS Marketplace listing is approved.
+
 name: Run ECS task definitions after AWS Marketplace approval
 
 on:
@@ -8,7 +10,7 @@ on:
         required: true
   pull_request:
     types: [opened, synchronize]
-    
+
 permissions:
   id-token: write
   contents: read
@@ -106,9 +108,12 @@ jobs:
           echo "Exit code: $EXIT_CODE"
           test "${EXIT_CODE}" = "0"
 
+
   run-dropall-task:
     runs-on: ubuntu-latest
     needs: run-core-tasks
+      # run the job run-dropall-task only after successful completion of job run-core-tasks
+    if: ${{ needs.run-core-tasks.result == 'success' && inputs.image_tag != '' }}
     env:
       CLUSTER_NAME: aws-mp-test-cluster
       SUBNETS: subnet-e01f40ad,subnet-372ba268,subnet-a45ad6c2
@@ -164,3 +169,41 @@ jobs:
           EXIT_CODE=$(jq -r '.tasks[0].containers[0].exitCode' desc.json)
           echo "Exit code: $EXIT_CODE"
           test "${EXIT_CODE}" = "0"
+
+
+  restrict-marketplace-listing:
+    runs-on: ubuntu-latest
+    needs: run-dropall-task
+    if: ${{ needs.run-dropall-task.result == 'success' }}
+    env:
+      AWS_REGION: us-east-1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials for vault access
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Get secrets from vault
+        id: vault-secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,/vault/liquibase
+          parse-json-secrets: true
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
+          aws-region: us-east-1
+
+      - name: Restrict AWS Marketplace listing
+        env:
+          PRODUCT_ID: ${{ env.PRODUCT_ID }}
+        run: |
+          chmod +x ./.github/utils/restrict-aws-mp-listing.sh
+          ./.github/utils/restrict-aws-mp-listing.sh
