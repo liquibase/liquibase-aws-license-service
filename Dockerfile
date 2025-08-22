@@ -1,8 +1,6 @@
-# Use the official Liquibase image as the base
-FROM liquibase/liquibase:4.33.0
+# Use the official Liquibase-PRO image as the base
+FROM liquibase/liquibase-pro:4.33.0
 
-# Marker which indicates this is a Liquibase docker container
-ENV DOCKER_AWS_LIQUIBASE=true
 
 # Add support for Liquibase PRO extensions using the Liquibase Package Manager (LPM)
 RUN lpm update && \
