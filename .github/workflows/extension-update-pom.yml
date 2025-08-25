@@ -3,7 +3,7 @@ name: Update pom.xml with latest OSS Release
 on:
   workflow_dispatch:
   repository_dispatch:
-    types: [oss-released-version]
+    types: [secure-released-version]
 
 permissions:
   contents: write
@@ -11,6 +11,6 @@ permissions:
   packages: write
 
 jobs:
-  update-pom-oss-version:
+  update-pom-secure-version:
     uses: liquibase/build-logic/.github/workflows/extension-release-prepare.yml@main
     secrets: inherit
