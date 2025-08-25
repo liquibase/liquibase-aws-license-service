@@ -1,7 +1,6 @@
-# Build stage - install extension using LPM
-FROM liquibase/liquibase:4.33.0 AS builder
+# Use the official Liquibase image as the base
+FROM liquibase/liquibase-secure:4.33.0 AS builder
 
-# LPM version and checksums
 ARG LPM_VERSION=0.2.11
 ARG LPM_SHA256=d07d1373446d2a9f11010649d705eba2ebefc23aedffec58d4d0a117c9a195b7
 ARG LPM_SHA256_ARM=77c8cf8369ad07ed536c3b4c352e40815f32f89b111cafabf8e3cfc102d912f8
@@ -30,16 +29,23 @@ RUN apt-get update && \
     ln -s /liquibase/bin/lpm /usr/local/bin/lpm && \
     lpm --version
 
-# Install the liquibase-aws-license-service extension
-RUN lpm add liquibase-aws-license-service
+# Marker which indicates this is a Liquibase docker container
+ENV DOCKER_AWS_LIQUIBASE=true
+
+# Add support for Liquibase PRO extensions using the Liquibase Package Manager (LPM)
+RUN lpm update && \
+    lpm add \
+    liquibase-aws-license-service \
+    --global
 
 # Final stage - clean image without LPM
 FROM liquibase/liquibase-secure:4.33.0
 
+# Marker which indicates this is a Liquibase docker container
 ENV DOCKER_AWS_LIQUIBASE=true
 
-# Copy the installed extension from builder stage
-COPY --from=builder /liquibase/lib /liquibase/lib
+# Copy only the installed extension JAR files from builder stage
+COPY --from=builder /liquibase/liquibase_libs/*.jar /liquibase/lib/
 
 # Default command to display Liquibase version
 CMD ["liquibase", "--help"]
