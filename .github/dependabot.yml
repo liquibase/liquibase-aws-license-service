@@ -18,6 +18,11 @@ updates:
       separator: "-"
     labels:
       - "sdou"
+    allow:
+      - dependency-name: "org.liquibase:liquibase-secure"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
 
   - package-ecosystem: "docker"
     directory: "/"
