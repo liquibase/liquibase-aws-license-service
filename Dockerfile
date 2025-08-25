@@ -1,5 +1,5 @@
 # Build stage - install extension using LPM
-FROM liquibase/liquibase-secure:4.33.0 AS builder
+FROM liquibase/liquibase:4.33.0 AS builder
 
 RUN liquibase lpm --download=true --lpmHome=/opt/lpm add liquibase-aws-license-service
 
