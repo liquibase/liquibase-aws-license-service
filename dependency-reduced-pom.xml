@@ -3,12 +3,12 @@
   <parent>
     <artifactId>liquibase-parent-pom</artifactId>
     <groupId>org.liquibase</groupId>
-    <version>0.5.8</version>
+    <version>0.6.0</version>
     <relativePath>../pom.xml/pom.xml</relativePath>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>liquibase-aws-license-service</artifactId>
-  <version>1.6.0</version>
+  <version>1.7.0</version>
   <url>http://www.liquibase.com</url>
   <licenses>
     <license>
