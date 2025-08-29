@@ -16,4 +16,5 @@ jobs:
       pull-requests: write
     with:
       nightly: true
+      java: "[17, 21]"
     secrets: inherit
