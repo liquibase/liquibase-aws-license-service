@@ -19,6 +19,8 @@ jobs:
     needs: authorize
     uses: liquibase/build-logic/.github/workflows/pro-extension-test.yml@main
     secrets: inherit
+    with:
+      java: "[17, 21]"
 
   dependabot:
     needs: [ authorize, build-test ]
