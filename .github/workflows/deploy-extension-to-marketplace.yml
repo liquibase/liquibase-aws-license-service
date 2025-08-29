@@ -7,13 +7,11 @@ on:
         description: 'This will submit a new version of the listing in AWS Marketplace.Image tag for the ECR liquibase/liquibasepro.'
         required: true
         default: '' # Pass the value like 1.0.0
-  pull_request:
-    branches:
-      - main
-    types:
-      - closed
-    paths:
-      - 'Dockerfile'
+      dry_run:
+        description: 'Run this as a dry run.'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
 #  https://datical.atlassian.net/browse/DAT-18638
@@ -55,9 +53,12 @@ jobs:
           echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
 
   build:
-      if: github.actor == 'dependabot' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true
+      if: ${{ inputs.dry_run == false }}
       runs-on:
           ubuntu-latest
+      permissions:
+        id-token: write
+        contents: read
       needs: check-OSS-version
       env:
         AWS_REGION: us-east-1
@@ -65,11 +66,24 @@ jobs:
           - name: Checkout
             uses: actions/checkout@v4
 
+          - name: Configure AWS credentials for vault access
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+              role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+              aws-region: us-east-1
+
+          - name: Get secrets from vault
+            id: vault-secrets
+            uses: aws-actions/aws-secretsmanager-get-secrets@v2
+            with:
+              secret-ids: |
+                ,/vault/liquibase
+              parse-json-secrets: true
+
           - name: Configure AWS Credentials
             uses: aws-actions/configure-aws-credentials@v4
             with:
-              aws-access-key-id: ${{ secrets.AWS_MP_ACCESS_KEY }}
-              aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+              role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
               aws-region: us-east-1
 
           - name: Set up QEMU
@@ -81,9 +95,9 @@ jobs:
           - name: Login to ECR Registry
             uses: docker/login-action@v3
             with:
-              registry: ${{ secrets.AWS_MP_REGISTRY }}
-              username: ${{ secrets.AWS_MP_ACCESS_KEY }}
-              password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+              registry: ${{ env.AWS_MP_REGISTRY }}
+              username: ${{ env.AWS_MP_ACCESS_KEY_ID }}
+              password: ${{ env.AWS_MP_ACCESS_KEY }}
 
           - name: Get latest liquibase docker tag
             id: get_latest_tag
@@ -94,7 +108,7 @@ jobs:
 
           - name: Build and Push Docker Image
             env:
-              ECR_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
+              ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
             uses: docker/build-push-action@v6
             with:
               context: .
@@ -102,36 +116,52 @@ jobs:
               no-cache: true
               push: true
               platforms: linux/amd64,linux/arm64
-              tags: ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
+              provenance: false # Disables the generation of provenance attestation
+              tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
             continue-on-error: true
 
           - name: Submit Request for AWS MP Listing
             env:
-              ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-              IMAGE_TAG: ${{ steps.get_latest_tag.outputs.LATEST_TAG }}
-              PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
-              AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
+              ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+              IMAGE_TAG: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
+              PRODUCT_ID: ${{ env.PRODUCT_ID }}
+              AWS_MP_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
             run: |
               chmod +x ./.github/utils/submit-aws-mp-listing.sh
               ./.github/utils/submit-aws-mp-listing.sh
 
   dry-run:
-    if: github.event_name == 'workflow_dispatch' && ${{ needs.check-OSS-version.outputs.OSS_VERSION_MATCH }} == true
+    if: ${{ inputs.dry_run == true }}
     runs-on:
       ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     needs: check-OSS-version
     env:
       AWS_REGION: us-east-1
-      DRY_RUN: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure AWS credentials for vault access
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Get secrets from vault
+        id: vault-secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,/vault/liquibase
+          parse-json-secrets: true
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_MP_ACCESS_KEY }}
-          aws-secret-access-key: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
+          role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
           aws-region: us-east-1
 
       - name: Set up QEMU
@@ -143,13 +173,13 @@ jobs:
       - name: Login to ECR Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.AWS_MP_REGISTRY }}
-          username: ${{ secrets.AWS_MP_ACCESS_KEY }}
-          password: ${{ secrets.AWS_MP_ACCESS_KEY_ID }}
-
+          registry: ${{ env.AWS_MP_REGISTRY }}
+          username: ${{ env.AWS_MP_ACCESS_KEY }}
+          password: ${{ env.AWS_MP_ACCESS_KEY_ID }}
+          
       - name: Build and Push Docker Image
         env:
-          ECR_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
+          ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -157,16 +187,16 @@ jobs:
           no-cache: true
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ secrets.AWS_MP_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
+          provenance: false # Disables the generation of provenance attestation
+          tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
         continue-on-error: true
 
       - name: Submit New Version Request for AWS MP Listing
         env:
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
-          PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
-          AWS_MP_REGISTRY: ${{ secrets.AWS_MP_REGISTRY }}
-#          DRY_RUN: "true"
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+          IMAGE_TAG: "${{ github.event.inputs.image_tag }}"
+          PRODUCT_ID: ${{ env.PRODUCT_ID }}
+          AWS_MP_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
         run: |
           chmod +x ./.github/utils/submit-aws-mp-listing.sh
           ./.github/utils/submit-aws-mp-listing.sh

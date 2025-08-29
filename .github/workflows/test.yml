@@ -8,6 +8,12 @@ on:
       - reopened
       - synchronize
 
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+  id-token: write
+
 jobs:
   authorize:
     environment: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && 'external' || 'internal' }}
@@ -23,6 +29,6 @@ jobs:
       java: "[17, 21]"
 
   dependabot:
-    needs: [ authorize, build-test ]
-    uses: liquibase/build-logic/.github/workflows/dependabot-automerge.yml@v0.7.8
+    needs: [authorize, build-test]
+    uses: liquibase/build-logic/.github/workflows/dependabot-automerge.yml@main
     secrets: inherit

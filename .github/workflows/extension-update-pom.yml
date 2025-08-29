@@ -5,8 +5,12 @@ on:
   repository_dispatch:
     types: [oss-released-version]
 
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
 jobs:
   update-pom-oss-version:
-    uses: liquibase/build-logic/.github/workflows/extension-release-prepare.yml@v0.7.8
+    uses: liquibase/build-logic/.github/workflows/extension-release-prepare.yml@main
     secrets: inherit
-    
