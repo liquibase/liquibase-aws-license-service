@@ -21,14 +21,14 @@ jobs:
       matrix:
         include:
           - family: version-command
-            container_name: Liquibase-Pro
+            container_name: Liquibase-Secure
           - family: update-command-dynamodb
-            container_name: Liquibase-Pro
+            container_name: Liquibase-Secure
 
     env:
       CLUSTER_NAME: aws-mp-test-cluster
       SUBNETS: subnet-e01f40ad,subnet-372ba268,subnet-a45ad6c2
-      ECR_PREFIX: 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibasepro
+      ECR_PREFIX: 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibaseSecure
 
     steps:
       - name: Show inputs
