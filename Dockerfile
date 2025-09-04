@@ -1,4 +1,3 @@
-# Use the official Liquibase image as the base
 FROM liquibase/liquibase-secure:4.33.0 AS builder
 
 ARG LPM_VERSION=0.2.11
