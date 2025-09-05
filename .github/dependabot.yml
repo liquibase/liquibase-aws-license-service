@@ -18,6 +18,7 @@ updates:
       separator: "-"
     labels:
       - "sdou"
+    registries: [ liquibase-secure ]
 
   - package-ecosystem: "docker"
     directory: "/"
@@ -27,3 +28,10 @@ updates:
       separator: "-"
     labels:
       - "sdou"
+
+registries:
+  liquibase-secure:
+    type: maven-repository
+    url: "https://maven.pkg.github.com/liquibase/liquibase-secure"
+    username: liquibot
+    password: "${{secrets.LIQUIBOT_PAT_GPM_ACCESS}}"
