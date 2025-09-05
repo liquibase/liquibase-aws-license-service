@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - Dockerfile  # This ensures the workflow only runs when the Dockerfile is changed.
+      - pom.xml     # This ensures the workflow also runs when pom.xml is changed specifically for liquibase-secure-version.
 permissions:
   contents: write
   pull-requests: write
@@ -29,12 +30,30 @@ jobs:
             ,/vault/liquibase
           parse-json-secrets: true
 
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if liquibase-secure.version was changed
+        id: check_secure_version
+        run: |
+          # Check if the PR contains changes to liquibase-secure.version in pom.xml
+          if git diff HEAD~1 HEAD -- pom.xml | grep -q "liquibase-secure.version"; then
+            echo "secure_version_changed=true" >> $GITHUB_OUTPUT
+            echo "Liquibase secure version was changed in this PR"
+          else
+            echo "secure_version_changed=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@v2
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
+      
       - name: Enable auto-merge for Dependabot PRs
+        if: contains(github.event.pull_request.changed_files, 'Dockerfile') || steps.check_secure_version.outputs.secure_version_changed == 'true'
         run: gh pr merge --merge "$PR_URL"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}

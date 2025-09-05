@@ -12,8 +12,6 @@ on:
         required: false
         type: boolean
         default: false
-  repository_dispatch:
-    types: [trigger-aws-marketplace-listing]
 
 jobs:
 #  https://datical.atlassian.net/browse/DAT-18638
@@ -54,9 +52,9 @@ jobs:
         run: |
           echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
 
-  test-run:
- # run this job for test_run or when it is a repository_dispatch event
-    if: ${{ inputs.dry_run == true || github.event.action == 'trigger-aws-marketplace-listing' }}
+  dry-run:
+    # run this job for dry_run or when it is a repository_dispatch event
+    if: ${{ inputs.dry_run == true }}
     runs-on:
       ubuntu-latest
     permissions:
@@ -103,8 +101,8 @@ jobs:
           password: ${{ env.AWS_MP_ACCESS_KEY_ID }}
 
       - name: Random test image tag
-        id: random_tag
-        run: echo "random_tag=test-$(date +%s)" >> $GITHUB_ENV
+        id: test_tag
+        run: echo "test_tag=test-$(date +%s)" >> $GITHUB_ENV
 
       - name: Build and Push Docker Image
         env:
@@ -117,8 +115,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           provenance: false # Disables the generation of provenance attestation
-          # the tags can be either from input or random_tag
-          tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag || env.random_tag }}
+          # the tags can be either from input or test_tag
+          tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag || env.test_tag }}
         continue-on-error: true
 
       - name: Submit New Version Request for AWS MP Listing
@@ -132,9 +130,8 @@ jobs:
           ./.github/utils/submit-aws-mp-listing.sh
           
   build:
-      # Run this job only when it's not a dry_run and no repository_dispatch is triggered.
-      # This ensures QA can run workflow file "run-task-definitions" before the real version is deployed.
-      if: ${{ inputs.dry_run == false && github.event.action != 'trigger-aws-marketplace-listing' }}
+      # submit a new version to AWS Marketplace that will be reviewed by AWS
+      if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
       runs-on:
           ubuntu-latest
       permissions:
