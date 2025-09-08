@@ -8,7 +8,7 @@ The Dockerfile uses a multi-stage build approach to create a clean, secure final
 
 ### Builder Stage
 
-- **Base**: `liquibase/liquibase-secure:4.33.0`
+- **Base**: `liquibase/liquibase-secure:5.0.0`
 - **Purpose**: Install and configure the AWS License Service extension
 - **Components**:
   - Downloads and installs Liquibase Package Manager (LPM) v0.2.11
@@ -17,7 +17,7 @@ The Dockerfile uses a multi-stage build approach to create a clean, secure final
 
 ### Final Stage  
 
-- **Base**: Clean `liquibase/liquibase-secure:4.33.0` image
+- **Base**: Clean `liquibase/liquibase-secure:5.0.0` image
 - **Purpose**: Provides production-ready Liquibase with AWS extension
 - **Contains**: Only the AWS License Service JAR file (no LPM)
 - **Security**: Minimal attack surface by excluding build tools
@@ -89,25 +89,3 @@ ls -la /liquibase/lib/
 - ✅ **Secure Build**: Final image contains no build tools or LPM
 - ✅ **Environment Markers**: `DOCKER_AWS_LIQUIBASE=true` for identification
 - ✅ **Version Pinning**: Uses specific, tested versions of all components
-
-### Use Cases
-
-- AWS Marketplace Liquibase deployments
-- Container orchestration (Kubernetes, ECS, etc.)
-- CI/CD pipelines requiring Liquibase with AWS licensing
-- Development environments mimicking AWS Marketplace conditions
-
-## :outbox_tray: Deploying the extension to Liquibase AWS Marketplace
-
-1. We manually update the `liquibase-secure` version in pom.xml
-2. The below steps run on every Liquibase Secure release.
-   a. The dependabot.yml file checks for new versions of dependencies for package-ecosystem: "docker" and creates a pull request to update the dependencies, specifically for new version of liquibase-secure docker .
-   b. The workflow file `dependabot-pr-merge-docker-changes.yml` auto merges the dependabot PR containing the new Docker Secure version.
-   c. The deploy-extension-to-marketplace.yml file runs and publishes the `test` extension to the Liquibase AWS Marketplace.
-
-<!-- TODO: The following sections will be updated in ticket https://datical.atlassian.net/browse/DAT-20280:
-- Deploying the extension to Liquibase AWS Marketplace
-- Testing Marketplace listing
-- How to test the liquibase commands with the Marketplace listing
-- Deploy the actual listing after testing steps
--->
