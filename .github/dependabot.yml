@@ -7,8 +7,7 @@ updates:
       interval: "daily"
     pull-request-branch-name:
       separator: "-"
-    labels:
-      - "sdou"
+    labels: ["sdou"]
 
   - package-ecosystem: "maven"
     directory: "/"
@@ -16,8 +15,9 @@ updates:
       interval: "daily"
     pull-request-branch-name:
       separator: "-"
-    labels:
-      - "sdou"
+    labels: ["sdou"]
+    registries:
+      - liquibase-secure        # <-- reference the registry here
     allow:
       - dependency-name: "com.liquibase:liquibase-secure"
     ignore:
@@ -30,5 +30,11 @@ updates:
       interval: "daily"
     pull-request-branch-name:
       separator: "-"
-    labels:
-      - "sdou"
+    labels: ["sdou"]
+
+registries:
+  liquibase-secure:
+    type: maven-repository
+    url: "https://maven.pkg.github.com/liquibase/liquibase-secure"
+    username: liquibot
+    password: "${{secrets.LIQUIBOT_PAT_GPM_ACCESS}}"
