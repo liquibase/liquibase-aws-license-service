@@ -1,20 +1,20 @@
 # Liquibase AWS Marketplace Extension Deployment and Testing Process
 
-🚀 Deploying a test extension to AWS Marketplace
+### 🚀 Deploying a test extension to AWS Marketplace
 
-1. Check for Update the versions: make sure the latest liquibase-secure.version is set in both **pom.xml** and **Dockerfile** before submitting an AWS Marketplace version. Check for any dependabot PR's to be merged.
+1. Check for update of liquibase-secure.version: make sure the latest `liquibase-secure.version` is set in both **pom.xml** and **Dockerfile** before submitting an AWS Marketplace version. Check for any dependabot PR's to be merged.
 
 2. Steps that happen for every SECURE release:
 
-a. dependabot.yml checks for new Docker dependencies and liquibase-secure.version updates, creating PRs when new versions are released.
+a. `dependabot.yml` checks for new Docker dependencies and `liquibase-secure.version` updates, creating PRs when new versions are released.
 
-b. dependabot-pr-merge-docker-changes.yml automatically merges Dependabot PRs for both Docker OSS version updates and liquibase-secure.version changes.
+b. `dependabot-pr-merge-docker-changes.yml` automatically merges Dependabot PRs for both Docker OSS version updates and liquibase-secure.version changes.
 
-c. Once the Liquibase Secure Docker image is published (from this workflow https://github.com/liquibase/docker/blob/main/.github/workflows/create-release.yml#L546) you must manually trigger deploy-extension-to-marketplace.yml in dry_run mode. This publishes a test image to the AWS Marketplace.
+c. Once the Liquibase Secure Docker image is published (from this workflow https://github.com/liquibase/docker/blob/main/.github/workflows/create-release.yml#L546) you must manually trigger `deploy-extension-to-marketplace.yml` in dry_run mode. This publishes a test image to the AWS Marketplace.
 
-d. After AWS Marketplace approval, QA runs the run-task-definitions.yml workflow using the test image. If there are no errors, the test image will be restricted automatically as part of the workflow.
+d. After AWS Marketplace approval, QA runs the `run-task-definitions.yml` workflow using the test image. If there are no errors, the test image will be restricted automatically as part of the workflow.
 
-e. QA then manually runs deploy-extension-to-marketplace.yml again (this time not in dry run). This submits the actual Liquibase-Pro version to the Marketplace.
+e. QA then manually runs `deploy-extension-to-marketplace.yml` again (**this time not in dry run**). This submits the actual Liquibase-Pro version to the Marketplace.
 
 # :crystal_ball: Run Task definitions
 
