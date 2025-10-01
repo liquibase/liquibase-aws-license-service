@@ -23,14 +23,14 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <liquibase-secure.version>5.0.0-SNAPSHOT</liquibase-secure.version>
+        <liquibase-secure.version>5.0.0</liquibase-secure.version>
         <sonar.tests>src/test/groovy</sonar.tests>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>com.liquibase</groupId>
-            <artifactId>liquibase-pro</artifactId>
+            <artifactId>liquibase-commercial</artifactId>
             <version>${liquibase-secure.version}</version>
 <!--            liquibase-core is included and marked as provided because the parent-pom does not mark it as provided, but it needs to be-->
             <scope>provided</scope>
