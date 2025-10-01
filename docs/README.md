@@ -149,3 +149,26 @@ ls -la /liquibase/lib/
 - ✅ **Secure Build**: Final image contains no build tools or LPM
 - ✅ **Environment Markers**: `DOCKER_AWS_LIQUIBASE=true` for identification
 - ✅ **Version Pinning**: Uses specific, tested versions of all components
+
+## Automated Version Management
+
+This repository uses Dependabot and GitHub Actions to automatically monitor and update the `liquibase-secure` Docker image version, ensuring that both the Dockerfile and pom.xml stay synchronized.
+
+### How it works
+
+1. **Dependabot monitors** https://github.com/liquibase/docker/pkgs/container/liquibase-secure for new releases (daily)
+2. **When a new version is available**, Dependabot creates a PR updating the Dockerfile:
+   ```dockerfile
+   FROM liquibase/liquibase-secure:X.Y.Z
+   ```
+3. **Automated workflow** (`dependabot-sync-and-merge.yml`) triggers on the Dependabot PR:
+   - Extracts the new version from the Dockerfile
+   - Updates `<liquibase-secure.version>` in pom.xml to match
+   - Commits the change to the same Dependabot PR
+   - Adds a comment showing the version sync
+   - Auto-merges the PR after all checks pass
+
+### Configuration Files
+
+- `.github/dependabot.yml` - Configures Dependabot to monitor Docker, Maven, and GitHub Actions
+- `.github/workflows/dependabot-sync-and-merge.yml` - Syncs pom.xml version and auto-merges Dependabot PRs

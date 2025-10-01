@@ -1,0 +1,139 @@
+name: Dependabot - Sync Versions and Auto-merge
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - 'Dockerfile'
+      - 'pom.xml'
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  sync-and-merge:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]' && github.repository == 'liquibase/liquibase-aws-license-service'
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      # Step 1: Sync pom.xml version to match Dockerfile
+      - name: Extract version from Dockerfile
+        id: extract_dockerfile_version
+        run: |
+          DOCKERFILE_VERSION=$(grep -E '^FROM liquibase/liquibase-secure:' Dockerfile | head -1 | cut -d':' -f2 | cut -d' ' -f1)
+          echo "Dockerfile version: $DOCKERFILE_VERSION"
+          echo "dockerfile_version=$DOCKERFILE_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Extract version from pom.xml
+        id: extract_pom_version
+        run: |
+          POM_VERSION=$(grep -oE '<liquibase-secure.version>[^<]+</liquibase-secure.version>' pom.xml | sed -E 's/<\/?liquibase-secure.version>//g')
+          echo "pom.xml version: $POM_VERSION"
+          echo "pom_version=$POM_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if versions match
+        id: check_versions
+        run: |
+          DOCKERFILE_VER="${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}"
+          POM_VER="${{ steps.extract_pom_version.outputs.pom_version }}"
+
+          if [ "$DOCKERFILE_VER" != "$POM_VER" ]; then
+            echo "versions_match=false" >> $GITHUB_OUTPUT
+            echo "❌ Versions do not match. Dockerfile: $DOCKERFILE_VER, pom.xml: $POM_VER"
+          else
+            echo "versions_match=true" >> $GITHUB_OUTPUT
+            echo "✅ Versions already match: $DOCKERFILE_VER"
+          fi
+
+      - name: Update pom.xml with Dockerfile version
+        if: steps.check_versions.outputs.versions_match == 'false'
+        run: |
+          NEW_VERSION="${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}"
+          echo "Updating pom.xml liquibase-secure.version to: $NEW_VERSION"
+
+          sed -i.bak -E "s|<liquibase-secure.version>[^<]+</liquibase-secure.version>|<liquibase-secure.version>$NEW_VERSION</liquibase-secure.version>|g" pom.xml
+          rm -f pom.xml.bak
+
+          echo "Updated section in pom.xml:"
+          grep -B2 -A2 "liquibase-secure.version" pom.xml
+
+      - name: Commit version sync
+        if: steps.check_versions.outputs.versions_match == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+          if ! git diff --quiet pom.xml; then
+            git add pom.xml
+            git commit -m "chore: sync liquibase-secure.version in pom.xml to ${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}
+
+          This commit automatically synchronizes the liquibase-secure.version property in pom.xml
+          to match the version updated by Dependabot in the Dockerfile.
+
+          Dockerfile version: ${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}
+          Previous pom.xml version: ${{ steps.extract_pom_version.outputs.pom_version }}"
+                      git push
+                      echo "✅ Successfully pushed pom.xml update"
+                    fi
+
+      - name: Comment on PR about version sync
+        if: steps.check_versions.outputs.versions_match == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const dockerfileVersion = '${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}';
+            const pomVersion = '${{ steps.extract_pom_version.outputs.pom_version }}';
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🔄 **Automated Version Sync**
+
+              I've automatically synchronized the \`liquibase-secure.version\` in \`pom.xml\` to match the Dockerfile update.
+
+              | File | Previous Version | New Version |
+              |------|-----------------|-------------|
+              | Dockerfile | - | \`${dockerfileVersion}\` |
+              | pom.xml | \`${pomVersion}\` | \`${dockerfileVersion}\` |
+
+              Both files now reference the same Liquibase Secure version.`
+                          });
+
+      # Step 2: Auto-merge the PR after sync
+      - name: Configure AWS credentials for vault access
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Get secrets from vault
+        id: vault-secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,/vault/liquibase
+          parse-json-secrets: true
+
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Auto-merge Dependabot PR
+        run: |
+          echo "✅ Versions are now synchronized. Auto-merging PR..."
+          gh pr merge --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
