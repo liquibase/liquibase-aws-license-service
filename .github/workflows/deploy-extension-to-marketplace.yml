@@ -35,7 +35,7 @@ jobs:
       - name: Get liquibase Secure version from Dockerfile
         id: dockerfile_liquibase_secure_version
         run: |
-          DOCKERFILE_LIQUIBASE_SECURE_VERSION=$(grep -oP '^FROM liquibase/liquibase:\K[^\s]+' Dockerfile)
+          DOCKERFILE_LIQUIBASE_SECURE_VERSION=$(grep -oP '^FROM liquibase/liquibase-secure:\K[^\s]+' Dockerfile)
           echo "Liquibase Secure version: $DOCKERFILE_LIQUIBASE_SECURE_VERSION"
           echo "dockerfile_liquibase_secure_version=$DOCKERFILE_LIQUIBASE_SECURE_VERSION" >> $GITHUB_OUTPUT
 
