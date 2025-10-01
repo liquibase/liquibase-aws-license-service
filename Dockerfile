@@ -1,4 +1,4 @@
-FROM liquibase/liquibase-secure:5.0 AS builder
+FROM liquibase/liquibase-secure:5.0.0 AS builder
 
 ARG LPM_VERSION=0.2.11
 ARG LPM_SHA256=d07d1373446d2a9f11010649d705eba2ebefc23aedffec58d4d0a117c9a195b7
@@ -38,7 +38,7 @@ RUN lpm update && \
     --global
 
 # Final stage - clean image without LPM
-FROM liquibase/liquibase-secure:5.0
+FROM liquibase/liquibase-secure:5.0.0
 
 # Marker which indicates this is a Liquibase docker container
 ENV DOCKER_AWS_LIQUIBASE=true
