@@ -28,14 +28,14 @@ jobs:
       - name: Get liquibase Secure version from pom.xml
         id: pom_liquibase_secure_version
         run: |
-          POM_LIQUIBASE_SECURE_VERSION=$(grep -oP '(?<=<liquibase-secure.version>)[^<]+' pom.xml)
+          POM_LIQUIBASE_SECURE_VERSION=$(grep -oE '<liquibase-secure.version>[^<]+</liquibase-secure.version>' pom.xml | sed -E 's/<\/?liquibase-secure.version>//g')
           echo "Liquibase Secure version: $POM_LIQUIBASE_SECURE_VERSION"
           echo "pom_liquibase_secure_version=$POM_LIQUIBASE_SECURE_VERSION" >> $GITHUB_OUTPUT
 
       - name: Get liquibase Secure version from Dockerfile
         id: dockerfile_liquibase_secure_version
         run: |
-          DOCKERFILE_LIQUIBASE_SECURE_VERSION=$(grep -oP '^FROM liquibase/liquibase:\K[^\s]+' Dockerfile)
+          DOCKERFILE_LIQUIBASE_SECURE_VERSION=$(grep -E '^FROM liquibase/liquibase-secure:' Dockerfile | head -1 | cut -d':' -f2 | cut -d' ' -f1)
           echo "Liquibase Secure version: $DOCKERFILE_LIQUIBASE_SECURE_VERSION"
           echo "dockerfile_liquibase_secure_version=$DOCKERFILE_LIQUIBASE_SECURE_VERSION" >> $GITHUB_OUTPUT
 

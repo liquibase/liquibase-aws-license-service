@@ -16,13 +16,6 @@ updates:
     pull-request-branch-name:
       separator: "-"
     labels: ["sdou"]
-    registries:
-      - liquibase-secure        # <-- reference the registry here
-    allow:
-      - dependency-name: "com.liquibase:liquibase-secure"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
 
   - package-ecosystem: "docker"
     directory: "/"
@@ -31,10 +24,3 @@ updates:
     pull-request-branch-name:
       separator: "-"
     labels: ["sdou"]
-
-registries:
-  liquibase-secure:
-    type: maven-repository
-    url: "https://maven.pkg.github.com/liquibase/liquibase-secure"
-    username: liquibot
-    password: "${{secrets.LIQUIBOT_PAT_GPM_ACCESS}}"
