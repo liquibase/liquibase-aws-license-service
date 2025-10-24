@@ -87,7 +87,7 @@ jobs:
 
       - name: Comment on PR about version sync
         if: steps.check_versions.outputs.versions_match == 'false'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const dockerfileVersion = '${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}';
