@@ -69,20 +69,12 @@ jobs:
           FAMILY: ${{ matrix.family }}
           CONTAINER_NAME: ${{ matrix.container_name }}
         run: |
-          aws ecs describe-task-definition --task-definition "$FAMILY" --query taskDefinition > base.json
+          # Use task definition template from repository
+          cp .github/task-definitions/$FAMILY.json task-def.json
+          # Replace placeholder image URI with actual image
           jq --arg IMG "${{ steps.resolve_image.outputs.image_uri }}" --arg NAME "$CONTAINER_NAME" '
             .containerDefinitions |= (map(if .name == $NAME then .image = $IMG else . end))
-          ' base.json > _tmp.json
-          jq 'del(
-                .taskDefinitionArn,
-                .requiresAttributes,
-                .compatibilities,
-                .revision,
-                .status,
-                .registeredAt,
-                .registeredBy,
-                .deregisteredAt
-              )' _tmp.json > task-def.json
+          ' task-def.json > _tmp.json && mv _tmp.json task-def.json
 
       - name: Register new task definition
         id: register
@@ -122,6 +114,9 @@ jobs:
       SUBNETS: subnet-e01f40ad,subnet-372ba268,subnet-a45ad6c2
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -132,19 +127,11 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Describe and prepare dropall task
+      - name: Prepare dropall task definition
         run: |
-          aws ecs describe-task-definition --task-definition dropall-command --query taskDefinition > base.json
-          jq 'del(
-                .taskDefinitionArn,
-                .requiresAttributes,
-                .compatibilities,
-                .revision,
-                .status,
-                .registeredAt,
-                .registeredBy,
-                .deregisteredAt
-              )' base.json > task-def.json
+          # Use task definition template from repository
+          cp .github/task-definitions/dropall-command.json task-def.json
+          # Image URI is not updated for dropall as it uses the existing registered image
 
       - name: Register new dropall revision
         id: register

@@ -1,0 +1,44 @@
+{
+  "family": "version-command",
+  "taskRoleArn": "arn:aws:iam::804611071420:role/ecsTaskExecutionRole",
+  "executionRoleArn": "arn:aws:iam::804611071420:role/ecsTaskExecutionRole",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "Liquibase-Secure",
+      "image": "PLACEHOLDER_IMAGE_URI",
+      "cpu": 0,
+      "memory": null,
+      "essential": true,
+      "command": [
+        "--version"
+      ],
+      "environment": [],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "portMappings": [],
+      "systemControls": [],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/connect-command",
+          "awslogs-create-group": "true",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "1024",
+  "memory": "3072",
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "placementConstraints": [],
+  "volumes": [],
+  "tags": []
+}
