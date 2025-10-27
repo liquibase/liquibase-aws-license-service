@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Liquibase Pro Docker image tag (full URI or tag)"
+        description: "Liquibase Pro Docker image tag (e.g., 'devopstest101' or '4.31.0')"
         required: true
 
 permissions:
@@ -21,10 +21,9 @@ jobs:
       matrix:
         include:
           - family: version-command
-            container_name: Liquibase-Pro
+            container_name: Liquibase-Secure
           - family: update-command-dynamodb
-            container_name: Liquibase-Pro
-
+            container_name: Liquibase-Secure
     env:
       AWS_REGION: us-east-1
       SUBNETS: subnet-e01f40ad,subnet-372ba268,subnet-a45ad6c2
@@ -57,16 +56,12 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Resolve IMAGE_URI (accept full URI or tag)
+      - name: Build IMAGE_URI from tag
         id: resolve_image
         shell: bash
         run: |
           IMAGE_TAG="${{ inputs.image_tag }}"
-          if [[ "$IMAGE_TAG" == *".amazonaws.com"* || "$IMAGE_TAG" == *".dkr.ecr."* ]]; then
-            IMAGE_URI="$IMAGE_TAG"
-          else
-            IMAGE_URI="${{ env.AWS_MP_REGISTRY }}:${IMAGE_TAG}"
-          fi
+          IMAGE_URI="${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}"
           echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
       - name: Build registerable task definition
