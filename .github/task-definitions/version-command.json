@@ -38,6 +38,5 @@
     "operatingSystemFamily": "LINUX"
   },
   "placementConstraints": [],
-  "volumes": [],
-  "tags": []
+  "volumes": []
 }

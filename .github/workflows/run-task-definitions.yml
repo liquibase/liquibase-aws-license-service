@@ -75,6 +75,9 @@ jobs:
           jq --arg IMG "${{ steps.resolve_image.outputs.image_uri }}" --arg NAME "$CONTAINER_NAME" '
             .containerDefinitions |= (map(if .name == $NAME then .image = $IMG else . end))
           ' task-def.json > _tmp.json && mv _tmp.json task-def.json
+          # Debug: Show the updated image URI
+          echo "Updated task definition with image:"
+          jq '.containerDefinitions[0].image' task-def.json
 
       - name: Register new task definition
         id: register
