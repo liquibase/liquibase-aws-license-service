@@ -21,9 +21,9 @@ jobs:
       matrix:
         include:
           - family: version-command
-            container_name: Liquibase-Secure
+            container_name: Liquibase-Pro
           - family: update-command-dynamodb
-            container_name: Liquibase-Secure
+            container_name: Liquibase-Pro
 
     env:
       AWS_REGION: us-east-1
