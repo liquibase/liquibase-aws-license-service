@@ -8,7 +8,6 @@
       "name": "Liquibase-Secure",
       "image": "PLACEHOLDER_IMAGE_URI",
       "cpu": 0,
-      "memory": null,
       "essential": true,
       "command": [
         "sh",
