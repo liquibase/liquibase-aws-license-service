@@ -97,8 +97,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.AWS_MP_REGISTRY }}
-          username: ${{ env.AWS_MP_ACCESS_KEY_ID }}
-          password: ${{ env.AWS_MP_ACCESS_KEY }}
+          username: ${{ env.AWS_MP_ACCESS_KEY }}
+          password: ${{ env.AWS_MP_ACCESS_KEY_ID }}
 
       - name: Random test image tag
         id: test_tag
@@ -174,8 +174,8 @@ jobs:
             uses: docker/login-action@v3
             with:
               registry: ${{ env.AWS_MP_REGISTRY }}
-              username: ${{ env.AWS_MP_ACCESS_KEY_ID }}
-              password: ${{ env.AWS_MP_ACCESS_KEY }}
+              username: ${{ env.AWS_MP_ACCESS_KEY }}
+              password: ${{ env.AWS_MP_ACCESS_KEY_ID }}
 
           - name: Get latest liquibase docker tag
             id: get_latest_tag
