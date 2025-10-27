@@ -2,7 +2,7 @@
 
 ### 🚀 Deploying a test extension to AWS Marketplace
 
-1. Check for update of liquibase-secure.version: make sure the latest `liquibase-secure.version` is set in both **pom.xml** and **Dockerfile** before submitting an AWS Marketplace version. Check for any dependabot PR's to be merged.
+1. Check for update of `liquibase-secure.version`: make sure the latest `liquibase-secure.version` is set in both **pom.xml** and **Dockerfile** before submitting an AWS Marketplace version. Check for any dependabot PR's to be merged.
 
 2. Steps that happen for every SECURE release:
 
@@ -16,7 +16,7 @@ d. After AWS Marketplace approval, QA runs the `run-task-definitions.yml` workfl
 
 e. QA then manually runs `deploy-extension-to-marketplace.yml` again (**this time not in dry run**). This submits the actual Liquibase-Pro version to the Marketplace.
 
-# :crystal_ball: Run Task definitions
+### :crystal_ball: Run Task definitions
 
 1. NOTE: it is going to take a while for the new version to be approved. Approximate 30mins.
 2. Run the workflow file `run-task-definitions.yml` with the test image tag
@@ -27,7 +27,7 @@ e. QA then manually runs `deploy-extension-to-marketplace.yml` again (**this tim
 
 1.**After testing** run the workflow [deploy-extension-to-marketplace.yml](https://github.com/liquibase/liquibase-aws-license-service/blob/main/.github/workflows/deploy-extension-to-marketplace.yml) with actual value eg: `4.31.0` with **disabled** "Run this as dry run"
 
-# :hammer: Manually test liquibase commands with the Marketplace listing
+### :hammer: (If required) Manually test liquibase commands with the Marketplace listing
 
 1. We have a `LiquibaseAWSMP` AWS account where we have listed the extension in the AWS Marketplace.
 2. All the QA's and Dev's should have access to this account.
@@ -56,7 +56,6 @@ e. QA then manually runs `deploy-extension-to-marketplace.yml` again (**this tim
 
 1. We release a new version of `liquibase-aws-license-service` only when it is required, as this is a SECURE extension.
 2. When there is a new `liquibase-aws-license-service` version release, the dependabot in LPM(liquibase package manager) repository creates a PR: example : https://github.com/liquibase/liquibase-package-manager/pull/430/files#diff-0b0a9d274bd84c7dbfff4680de10599cd0d96458b06b74a925b2bcd3e3fc2fadR15. We need to **manually** merge the PR. Make sure to review and merge the PR before proceeding.
-
 
 # Liquibase AWS License Service Extension
 
@@ -154,7 +153,7 @@ ls -la /liquibase/lib/
 
 This repository uses Dependabot and GitHub Actions to automatically monitor and update the `liquibase-secure` Docker image version, ensuring that both the Dockerfile and pom.xml stay synchronized.
 
-### How it works
+### 1. How it works
 
 1. **Dependabot monitors** https://github.com/liquibase/docker/pkgs/container/liquibase-secure for new releases (daily)
 2. **When a new version is available**, Dependabot creates a PR updating the Dockerfile:
@@ -168,7 +167,7 @@ This repository uses Dependabot and GitHub Actions to automatically monitor and 
    - Adds a comment showing the version sync
    - Auto-merges the PR after all checks pass
 
-### Configuration Files
+### 2. Configuration Files
 
 - `.github/dependabot.yml` - Configures Dependabot to monitor Docker, Maven, and GitHub Actions
 - `.github/workflows/dependabot-sync-and-merge.yml` - Syncs pom.xml version and auto-merges Dependabot PRs

@@ -26,21 +26,31 @@ jobs:
             container_name: Liquibase-Secure
 
     env:
-      CLUSTER_NAME: aws-mp-test-cluster
+      AWS_REGION: us-east-1
       SUBNETS: subnet-e01f40ad,subnet-372ba268,subnet-a45ad6c2
-      ECR_PREFIX: 709825985650.dkr.ecr.us-east-1.amazonaws.com/liquibase/liquibase/liquibaseSecure
-
+      CLUSTER_NAME: aws-mp-test-cluster
     steps:
-      - name: Show inputs
-        run: |
-          echo "IMAGE_TAG=${{ inputs.image_tag }}"
-          echo "FAMILY=${{ matrix.family }}"
-          echo "CONTAINER_NAME=${{ matrix.container_name }}"
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials for vault access
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_MARKETPLACE_GITHUB_OIDC_ROLE_ARN_INFRASTRUCTURE }}
+          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Get secrets from vault
+        id: vault-secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,/vault/liquibase
+          parse-json-secrets: true
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
           aws-region: us-east-1
           role-session-name: AWSMarketplaceApprovalSession
 
@@ -55,7 +65,7 @@ jobs:
           if [[ "$IMAGE_TAG" == *".amazonaws.com"* || "$IMAGE_TAG" == *".dkr.ecr."* ]]; then
             IMAGE_URI="$IMAGE_TAG"
           else
-            IMAGE_URI="${ECR_PREFIX}:${IMAGE_TAG}"
+            IMAGE_URI="${{ env.AWS_MP_REGISTRY }}:${IMAGE_TAG}"
           fi
           echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
