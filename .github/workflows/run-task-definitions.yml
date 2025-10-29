@@ -61,7 +61,7 @@ jobs:
         shell: bash
         run: |
           IMAGE_TAG="${{ inputs.image_tag }}"
-          IMAGE_URI="${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}/liquibase/liquibase/liquibasepro:${IMAGE_TAG}"
+          IMAGE_URI="${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}"
           echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
       - name: Build registerable task definition

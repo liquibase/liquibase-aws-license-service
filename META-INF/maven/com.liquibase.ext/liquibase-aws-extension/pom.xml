@@ -1,0 +1,461 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.liquibase</groupId>
+        <artifactId>liquibase-parent-pom</artifactId>
+        <version>0.7.0-RC1</version>
+    </parent>
+
+    <groupId>com.liquibase.ext</groupId>
+    <artifactId>liquibase-aws-extension</artifactId>
+    <version>5.0.1</version>
+    <packaging>jar</packaging>
+
+    <name>Liquibase AWS Extension</name>
+    <description>Read and write files to S3, natively read your AWS secrets, and work with DynamoDB in Liquibase.</description>
+    <url>https://docs.liquibase.com</url>
+
+    <developers>
+        <developer>
+            <name>Alex Brackx</name>
+            <email>abrackx@liquibase.com</email>
+            <organization>Liquibase</organization>
+            <organizationUrl>https://www.liquibase.com</organizationUrl>
+        </developer>
+        <developer>
+            <name>Steve Massaro</name>
+            <email>smassaro@liquibase.com</email>
+            <organization>Liquibase</organization>
+            <organizationUrl>https://www.liquibase.com</organizationUrl>
+        </developer>
+        <developer>
+            <name>Wesley Willard</name>
+            <email>wwillard@liquibase.com</email>
+            <organization>Liquibase</organization>
+            <organizationUrl>https://www.liquibase.com</organizationUrl>
+        </developer>
+    </developers>
+
+    <properties>
+        <amazon.aws.version>2.34.8</amazon.aws.version>
+        <crt.version>0.39.0</crt.version>
+        <liquibase.version>5.0.1</liquibase.version>
+        <gmavenplus-plugin.version>3.0.2</gmavenplus-plugin.version>
+        <sonar.tests>src/test</sonar.tests>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <mockito-core.version>5.14.2</mockito-core.version>
+        <mockito-junit-jupiter.version>5.14.2</mockito-junit-jupiter.version>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+        <maven.site.skip>true</maven.site.skip>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    </properties>
+
+    <scm>
+        <connection>scm:git:${project.scm.url}</connection>
+        <developerConnection>scm:git:${project.scm.url}</developerConnection>
+		<url>https://github.com/liquibase/liquibase-aws-extension.git</url>
+		<tag>HEAD</tag>
+	</scm>
+
+    <distributionManagement>
+        <repository>
+            <id>pro-maven.liquibase.com</id>
+            <url>s3://liquibase-pro-maven/</url>
+        </repository>
+        <snapshotRepository>
+            <id>pro-maven.liquibase.com</id>
+            <url>s3://liquibase-pro-maven/</url>
+        </snapshotRepository>
+    </distributionManagement>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${amazon.aws.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>secretsmanager</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ssm</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sts</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.liquibase.ext</groupId>
+            <artifactId>liquibase-redshift</artifactId>
+            <version>5.0.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.amazonaws</groupId>
+                    <artifactId>aws-java-sdk-bundle</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.liquibase</groupId>
+                    <artifactId>liquibase-core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-core</artifactId>
+            <version>1.12.791</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.objenesis</groupId>
+            <artifactId>objenesis</artifactId>
+            <version>3.4</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>io.github.joke</groupId>
+            <artifactId>spock-mockable</artifactId>
+            <version>1.5.7</version>
+            <scope>test</scope>
+            <exclusions>
+<!--                These versions are out of date and not compatible with Java 21-->
+                <exclusion>
+                    <groupId>net.bytebuddy</groupId>
+                    <artifactId>byte-buddy-agent</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>net.bytebuddy</groupId>
+                    <artifactId>byte-buddy</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+<!--        Using com.liquibase:liquibase-pro instead of separate core and commercial dependencies-->
+        <dependency>
+            <groupId>com.liquibase</groupId>
+            <artifactId>liquibase-commercial</artifactId>
+            <version>${liquibase.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.liquibase</groupId>
+            <artifactId>liquibase-extension-testing</artifactId>
+            <version>${liquibase.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${amazon.aws.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3-transfer-manager</artifactId>
+            <version>${amazon.aws.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk.crt</groupId>
+            <artifactId>aws-crt</artifactId>
+            <version>${crt.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.20.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.4.240</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb-enhanced</artifactId>
+            <version>2.34.8</version>
+            <scope>compile</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <version>1.19.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.13.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>DynamoDBLocal</artifactId>
+            <version>2.6.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+            </resource>
+            <resource>
+                <directory>src/main/resources-filtered</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+                <filtering>false</filtering>
+            </testResource>
+            <testResource>
+                <directory>src/test/filtered-resources</directory>
+                <filtering>true</filtering>
+            </testResource>
+        </testResources>
+        <plugins>
+            <plugin>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>${maven-shade-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>uber-jar</id>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>**/module-info.class</exclude>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>empty.txt</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer" />
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                                    <addHeader>false</addHeader>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Implementation-Title>${project.name}</Implementation-Title>
+                                        <Bundle-Vendor>Liquibase</Bundle-Vendor>
+                                        <Bundle-Version>${project.version}</Bundle-Version>
+                                    </manifestEntries>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                </configuration>
+            </plugin>
+            <!-- Generate META-INF/services files automatically for the services specified below. -->
+            <plugin>
+                <groupId>eu.somatik.serviceloader-maven-plugin</groupId>
+                <artifactId>serviceloader-maven-plugin</artifactId>
+                <version>1.4.0</version>
+                <configuration>
+                    <services>
+                        <param>liquibase.resource.s3.client.S3ClientPlugin</param>
+                        <param>liquibase.command.copy.ProjectCopier</param>
+                        <param>liquibase.configuration.ConfiguredValueModifier</param>
+                        <param>liquibase.configuration.pro.UnlicensedVariableList</param>
+                        <param>com.datical.liquibase.ext.history.DatabaseChangeLogHistoryService</param>
+                    </services>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+    <profiles>
+        <profile>
+            <id>aws-obfuscation</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <version>${maven-jar-plugin.version}</version>
+                        <configuration>
+                            <archive>
+                                <manifestEntries>
+                                    <Specification-Title>Liquibase</Specification-Title>
+                                    <Specification-Version>${liquibase.version}</Specification-Version>
+                                    <Specification-Vendor>Liquibase.org</Specification-Vendor>
+                                    <Implementation-Title>${project.artifactId}-${project.version}</Implementation-Title>
+                                    <Implementation-Version>${project.version}</Implementation-Version>
+                                    <Implementation-Vendor>Liquibase</Implementation-Vendor>
+                                </manifestEntries>
+                            </archive>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>build-javadoc-jar</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                                <configuration>
+                                    <classifier>javadoc</classifier>
+                                    <classesDirectory>${project.basedir}</classesDirectory>
+                                    <includes>
+                                        <include>readme.javadocs.txt</include>
+                                    </includes>
+                                    <archive>
+                                        <addMavenDescriptor>false</addMavenDescriptor>
+                                    </archive>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>build-sources-jar</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                                <configuration>
+                                    <classifier>sources</classifier>
+                                    <classesDirectory>${project.basedir}</classesDirectory>
+                                    <includes>
+                                        <include>readme.sources.txt</include>
+                                    </includes>
+                                    <archive>
+                                        <addMavenDescriptor>false</addMavenDescriptor>
+                                    </archive>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>com.github.wvengen</groupId>
+                        <artifactId>proguard-maven-plugin</artifactId>
+                        <version>${proguard-maven-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>proguard</goal>
+                                </goals>
+                                <configuration>
+                                    <addMavenDescriptor>true</addMavenDescriptor>
+                                    <includeDependency>true</includeDependency>
+                                    <includeDependencyInjar>false</includeDependencyInjar>
+                                    <libs combine.children="append">
+                                        <lib>${java.home}/jmods/</lib>
+                                    </libs>
+                                    <options>
+                                        <option>
+                                            -keep class com.** {
+                                            *;
+                                            }
+                                            -keep class liquibase.** {
+                                            *;
+                                            }
+                                            -keep class org.liquibase.** {
+                                            *;
+                                            }
+                                            -keep class software.amazon.** {
+                                            *;
+                                            }
+                                            -keep class io.netty.** {
+                                            *;
+                                            }
+                                            -keep class org.reactivestreams.** {
+                                            *;
+                                            }
+                                            -keep class com.google.** {
+                                            *;
+                                            }
+                                            -keep class com.fasterxml.jackson.** {
+                                            *;
+                                            }
+                                            -keep class org.apache.** {
+                                            *;
+                                            }
+                                            -keep class org.bouncycastle.** {
+                                            *;
+                                            }
+                                            -keep class org.slf4j.** {
+                                            *;
+                                            }
+                                        </option>
+                                        <option>-dontwarn software.amazon.**</option>
+                                        <option>-dontwarn com.amazon.redshift.**</option>
+                                        <option>-dontwarn org.joda.**</option>
+                                        <option>-dontwarn org.slf4j.**</option>
+                                        <option>-dontwarn org.apache.**</option>
+                                        <option>-dontwarn io.netty.**</option>
+                                        <option>-dontwarn com.fasterxml.**</option>
+                                        <option>-dontwarn org.graalvm.**</option>
+                                        <option>-dontwarn com.oracle.**</option>
+                                        <option>-keepattributes *Annotation*,EnclosingMethod,Signature</option>
+                                    </options>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

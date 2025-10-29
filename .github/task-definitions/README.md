@@ -61,8 +61,22 @@ To modify a task definition:
 
 ## Required IAM Permissions
 
+### Task Execution Role
 The task execution role (`arn:aws:iam::804611071420:role/ecsTaskExecutionRole`) needs:
-- ECR access to pull images
-- CloudWatch Logs access to create log streams
-- S3 access to read configuration files (for update and dropall commands)
-- DynamoDB access (for update and dropall commands)
+- **ECR access** to pull images
+- **CloudWatch Logs access** to create log streams
+
+### Task Role
+The task role (`arn:aws:iam::804611071420:role/ecsTaskExecutionRole`) needs:
+- **S3 access** to read configuration files from `s3://aws-marketplace-listing-files/`
+- **DynamoDB access** for update and dropall commands
+- **Proper permissions** for AWS SDK authentication
+
+## Environment Variables
+
+Tasks that access AWS services (S3, DynamoDB) include these environment variables:
+- `AWS_REGION=us-east-1` - Specifies the AWS region
+- `AWS_SDK_LOAD_CONFIG=true` - Enables SDK configuration loading
+- `AWS_EC2_METADATA_DISABLED=false` - Allows ECS task role credentials from metadata
+
+These variables help resolve AWS SDK authentication issues in containerized environments.

@@ -18,6 +18,14 @@
         {
           "name": "AWS_REGION",
           "value": "us-east-1"
+        },
+        {
+          "name": "AWS_SDK_LOAD_CONFIG",
+          "value": "true"
+        },
+        {
+          "name": "AWS_EC2_METADATA_DISABLED",
+          "value": "false"
         }
       ],
       "mountPoints": [
