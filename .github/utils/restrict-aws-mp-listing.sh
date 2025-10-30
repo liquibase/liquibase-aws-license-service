@@ -29,19 +29,25 @@ echo "Found delivery options to restrict: $DELIVERY_OPTION_IDS"
 # Restrict the marketplace listing by removing delivery options
 echo "Restricting AWS Marketplace listing for product ${PRODUCT_ID}..."
 
+# Use jq to properly construct the change-set JSON with correct escaping
+CHANGE_SET_JSON=$(jq -n \
+  --arg productId "$PRODUCT_ID" \
+  --argjson deliveryIds "$DELIVERY_OPTION_IDS" \
+  '[{
+    "ChangeType": "RestrictDeliveryOptions",
+    "Entity": {
+      "Identifier": $productId,
+      "Type": "ContainerProduct@1.0"
+    },
+    "Details": ({
+      "DeliveryOptionIds": $deliveryIds
+    } | tostring)
+  }]')
+
 CHANGE_SET_RESPONSE=$(aws marketplace-catalog start-change-set \
     --catalog "AWSMarketplace" \
     --region "${AWS_REGION}" \
-    --change-set '[
-      {
-        "ChangeType": "RestrictDeliveryOptions",
-        "Entity": {
-          "Identifier": "'"${PRODUCT_ID}"'",
-          "Type": "ContainerProduct@1.0"
-        },
-        "Details": "{\"DeliveryOptionIds\": '"$DELIVERY_OPTION_IDS"'}"
-      }
-      ]' \
+    --change-set "$CHANGE_SET_JSON" \
     --output json)
 
 CHANGE_SET_ID=$(echo "$CHANGE_SET_RESPONSE" | jq -r '.ChangeSetId')
