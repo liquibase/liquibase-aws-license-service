@@ -10,18 +10,33 @@ a. `dependabot.yml` checks for new Docker dependencies and `liquibase-secure.ver
 
 b. `dependabot-pr-merge-docker-changes.yml` automatically merges Dependabot PRs for both Docker OSS version updates and liquibase-secure.version changes.
 
-c. Once the Liquibase Secure Docker image is published (from this workflow https://github.com/liquibase/docker/blob/main/.github/workflows/create-release.yml#L546) you must manually trigger `deploy-extension-to-marketplace.yml` in dry_run mode. This publishes a test image to the AWS Marketplace.
+c. Once the Liquibase Secure Docker image is published (from this workflow https://github.com/liquibase/docker/blob/main/.github/workflows/create-release.yml#L546) you must manually trigger `deploy-extension-to-marketplace.yml` in **dry_run** mode. This publishes a **test_image** to the AWS Marketplace. 
 
-d. After AWS Marketplace approval, QA runs the `run-task-definitions.yml` workflow using the test image. If there are no errors, the test image will be restricted automatically as part of the workflow.
+![](./image/dry_run.png)
 
-e. QA then manually runs `deploy-extension-to-marketplace.yml` again (**this time not in dry run**). This submits the actual Liquibase-Pro version to the Marketplace.
+d. After AWS Marketplace approval ( this takes ~30min), QA manually runs the `run-task-definitions.yml` workflow using the **test_image**. If there are no errors, the **test_image** will be restricted automatically as part of the workflow. 
+**NOTE**: it is going to take a while for the version to be restricted. Approximate 15mins.
+
+e. QA then manually runs `deploy-extension-to-marketplace.yml` again (**this time not in dry run**). This submits the actual Liquibase-Secure version to the Marketplace.
 
 ### :crystal_ball: Run Task definitions
 
-1. NOTE: it is going to take a while for the new version to be approved. Approximate 30mins.
-2. Run the workflow file `run-task-definitions.yml` with the test image tag after the approval is done. 
-   ![](./image/dry_run.png)
-3. After the workflow is successfully run, the `test_tag` version should be restricted as part of the workflow.NOTE: it is going to take a while for the version to be restricted. Approximate 15mins.
+**⚠️ IMPORTANT: This workflow is ONLY for testing versions, NOT for production releases**
+
+**When to Use**:
+- ✅ Testing development versions (e.g., `devopstest101`, `devopstest102`)
+- ✅ Validating pre-release versions before making them public
+- ✅ QA testing of marketplace listings
+
+**When NOT to Use**:
+- ❌ DO NOT use for actual production versions (e.g., `4.31.0`, `4.32.0`)
+- ❌ DO NOT use for versions you want to keep publicly available
+- ❌ DO NOT run on versions already released to customers
+
+**What It Does**:
+1. Runs ECS tasks to test the specified image_tag version
+2. **Automatically restricts ONLY the tested version using image_tag** in AWS Marketplace after successful testing
+3. Other versions remain publicly available
 
 # :ship: Deploy the actual listing after testing
 
