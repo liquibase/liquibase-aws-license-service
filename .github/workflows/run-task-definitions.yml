@@ -133,13 +133,6 @@ jobs:
             ,/vault/liquibase
           parse-json-secrets: true
 
-      - name: Debug - Check ECS_SUBNETS environment variable
-        run: |
-          echo "ECS_SUBNETS value: '${{ env.ECS_SUBNETS }}'"
-          echo "ECS_SUBNETS from env: '${ECS_SUBNETS}'"
-          echo "All env vars containing SUBNET:"
-          env | grep -i subnet || echo "No SUBNET vars found"
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

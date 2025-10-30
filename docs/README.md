@@ -19,7 +19,7 @@ e. QA then manually runs `deploy-extension-to-marketplace.yml` again (**this tim
 ### :crystal_ball: Run Task definitions
 
 1. NOTE: it is going to take a while for the new version to be approved. Approximate 30mins.
-2. Run the workflow file `run-task-definitions.yml` with the test image tag
+2. Run the workflow file `run-task-definitions.yml` with the test image tag after the approval is done. 
    ![](./image/dry_run.png)
 3. After the workflow is successfully run, the `test_tag` version should be restricted as part of the workflow.NOTE: it is going to take a while for the version to be restricted. Approximate 15mins.
 
