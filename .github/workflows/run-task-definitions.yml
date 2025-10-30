@@ -14,180 +14,180 @@ permissions:
   contents: read
 
 jobs:
-  # run-core-tasks:
-  #   runs-on: ubuntu-latest
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       include:
-  #         - family: version-command
-  #           container_name: Liquibase-Secure
-  #         - family: update-command-dynamodb
-  #           container_name: Liquibase-Secure
-  #   env:
-  #     AWS_REGION: us-east-1
-  #     CLUSTER_NAME: aws-mp-test-cluster
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+  run-core-tasks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - family: version-command
+            container_name: Liquibase-Secure
+          - family: update-command-dynamodb
+            container_name: Liquibase-Secure
+    env:
+      AWS_REGION: us-east-1
+      CLUSTER_NAME: aws-mp-test-cluster
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     - name: Configure AWS credentials for vault access
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
-  #         aws-region: us-east-1
+      - name: Configure AWS credentials for vault access
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
 
-  #     - name: Get secrets from vault
-  #       id: vault-secrets
-  #       uses: aws-actions/aws-secretsmanager-get-secrets@v2
-  #       with:
-  #         secret-ids: |
-  #           ,/vault/liquibase
-  #         parse-json-secrets: true
+      - name: Get secrets from vault
+        id: vault-secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,/vault/liquibase
+          parse-json-secrets: true
 
-  #     - name: Configure AWS Credentials
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
-  #         aws-region: us-east-1
-  #         role-session-name: AWSMarketplaceApprovalSession
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
+          aws-region: us-east-1
+          role-session-name: AWSMarketplaceApprovalSession
 
-  #     - name: Install jq
-  #       run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
-  #     - name: Build IMAGE_URI from tag
-  #       id: resolve_image
-  #       shell: bash
-  #       run: |
-  #         IMAGE_TAG="${{ inputs.image_tag }}"
-  #         IMAGE_URI="${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}"
-  #         echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+      - name: Build IMAGE_URI from tag
+        id: resolve_image
+        shell: bash
+        run: |
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          IMAGE_URI="${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}"
+          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
-  #     - name: Build registerable task definition
-  #       env:
-  #         FAMILY: ${{ matrix.family }}
-  #         CONTAINER_NAME: ${{ matrix.container_name }}
-  #       run: |
-  #         # Use task definition template from repository
-  #         cp .github/task-definitions/$FAMILY.json task-def.json
-  #         # Replace placeholder image URI with actual image
-  #         jq --arg IMG "${{ steps.resolve_image.outputs.image_uri }}" --arg NAME "$CONTAINER_NAME" '
-  #           .containerDefinitions |= (map(if .name == $NAME then .image = $IMG else . end))
-  #         ' task-def.json > _tmp.json && mv _tmp.json task-def.json
-  #         # Debug: Show the updated image URI
-  #         echo "Updated task definition with image:"
-  #         jq '.containerDefinitions[0].image' task-def.json
+      - name: Build registerable task definition
+        env:
+          FAMILY: ${{ matrix.family }}
+          CONTAINER_NAME: ${{ matrix.container_name }}
+        run: |
+          # Use task definition template from repository
+          cp .github/task-definitions/$FAMILY.json task-def.json
+          # Replace placeholder image URI with actual image
+          jq --arg IMG "${{ steps.resolve_image.outputs.image_uri }}" --arg NAME "$CONTAINER_NAME" '
+            .containerDefinitions |= (map(if .name == $NAME then .image = $IMG else . end))
+          ' task-def.json > _tmp.json && mv _tmp.json task-def.json
+          # Debug: Show the updated image URI
+          echo "Updated task definition with image:"
+          jq '.containerDefinitions[0].image' task-def.json
 
-  #     - name: Register new task definition
-  #       id: register
-  #       run: |
-  #         aws ecs register-task-definition --cli-input-json file://task-def.json > reg.json
-  #         TASK_DEF_ARN=$(jq -r '.taskDefinition.taskDefinitionArn' reg.json)
-  #         echo "task_def_arn=$TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+      - name: Register new task definition
+        id: register
+        run: |
+          aws ecs register-task-definition --cli-input-json file://task-def.json > reg.json
+          TASK_DEF_ARN=$(jq -r '.taskDefinition.taskDefinitionArn' reg.json)
+          echo "task_def_arn=$TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
 
-  #     - name: Run task
-  #       id: run_task
-  #       run: |
-  #         aws ecs run-task \
-  #           --cluster "$CLUSTER_NAME" \
-  #           --launch-type FARGATE \
-  #           --network-configuration "awsvpcConfiguration={subnets=[${{ env.ECS_SUBNETS }}],assignPublicIp=ENABLED}" \
-  #           --task-definition "${{ steps.register.outputs.task_def_arn }}" \
-  #           --count 1 > run.json
-  #         TASK_ARN=$(jq -r '.tasks[0].taskArn' run.json)
-  #         echo "task_arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
+      - name: Run task
+        id: run_task
+        run: |
+          aws ecs run-task \
+            --cluster "$CLUSTER_NAME" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ env.ECS_SUBNETS }}],assignPublicIp=ENABLED}" \
+            --task-definition "${{ steps.register.outputs.task_def_arn }}" \
+            --count 1 > run.json
+          TASK_ARN=$(jq -r '.tasks[0].taskArn' run.json)
+          echo "task_arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
 
-  #     - name: Wait and check exit code
-  #       run: |
-  #         aws ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}"
-  #         aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}" > desc.json
-  #         EXIT_CODE=$(jq -r '.tasks[0].containers[0].exitCode' desc.json)
-  #         echo "Exit code: $EXIT_CODE"
-  #         test "${EXIT_CODE}" = "0"
+      - name: Wait and check exit code
+        run: |
+          aws ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}"
+          aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}" > desc.json
+          EXIT_CODE=$(jq -r '.tasks[0].containers[0].exitCode' desc.json)
+          echo "Exit code: $EXIT_CODE"
+          test "${EXIT_CODE}" = "0"
 
-  # run-dropall-task:
-  #   runs-on: ubuntu-latest
-  #   needs: run-core-tasks
-  #     # run the job run-dropall-task only after successful completion of job run-core-tasks
-  #   if: ${{ needs.run-core-tasks.result == 'success' && inputs.image_tag != '' }}
-  #   env:
-  #     CLUSTER_NAME: aws-mp-test-cluster
-  #     AWS_REGION: us-east-1
+  run-dropall-task:
+    runs-on: ubuntu-latest
+    needs: run-core-tasks
+      # run the job run-dropall-task only after successful completion of job run-core-tasks
+    if: ${{ needs.run-core-tasks.result == 'success' && inputs.image_tag != '' }}
+    env:
+      CLUSTER_NAME: aws-mp-test-cluster
+      AWS_REGION: us-east-1
 
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     - name: Configure AWS credentials for vault access
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
-  #         aws-region: us-east-1
+      - name: Configure AWS credentials for vault access
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
 
-  #     - name: Get secrets from vault
-  #       id: vault-secrets
-  #       uses: aws-actions/aws-secretsmanager-get-secrets@v2
-  #       with:
-  #         secret-ids: |
-  #           ,/vault/liquibase
-  #         parse-json-secrets: true
+      - name: Get secrets from vault
+        id: vault-secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,/vault/liquibase
+          parse-json-secrets: true
 
-  #     - name: Configure AWS credentials
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
-  #         aws-region: us-east-1
-  #         role-session-name: AWSMarketplaceApprovalSession
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
+          aws-region: us-east-1
+          role-session-name: AWSMarketplaceApprovalSession
 
-  #     - name: Install jq
-  #       run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
-  #     - name: Build IMAGE_URI from tag
-  #       id: resolve_image
-  #       shell: bash
-  #       run: |
-  #         IMAGE_TAG="${{ inputs.image_tag }}"
-  #         IMAGE_URI="${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}"
-  #         echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+      - name: Build IMAGE_URI from tag
+        id: resolve_image
+        shell: bash
+        run: |
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          IMAGE_URI="${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}"
+          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
-  #     - name: Prepare dropall task definition
-  #       run: |
-  #         # Use task definition template from repository
-  #         cp .github/task-definitions/dropall-command.json task-def.json
-  #         # Replace placeholder image URI with actual image
-  #         jq --arg IMG "${{ steps.resolve_image.outputs.image_uri }}" --arg NAME "Liquibase-Secure" '
-  #           .containerDefinitions |= (map(if .name == $NAME then .image = $IMG else . end))
-  #         ' task-def.json > _tmp.json && mv _tmp.json task-def.json
-  #         # Debug: Show the updated image URI
-  #         echo "Updated task definition with image:"
-  #         jq '.containerDefinitions[0].image' task-def.json
+      - name: Prepare dropall task definition
+        run: |
+          # Use task definition template from repository
+          cp .github/task-definitions/dropall-command.json task-def.json
+          # Replace placeholder image URI with actual image
+          jq --arg IMG "${{ steps.resolve_image.outputs.image_uri }}" --arg NAME "Liquibase-Secure" '
+            .containerDefinitions |= (map(if .name == $NAME then .image = $IMG else . end))
+          ' task-def.json > _tmp.json && mv _tmp.json task-def.json
+          # Debug: Show the updated image URI
+          echo "Updated task definition with image:"
+          jq '.containerDefinitions[0].image' task-def.json
 
-  #     - name: Register new dropall revision
-  #       id: register
-  #       run: |
-  #         aws ecs register-task-definition --cli-input-json file://task-def.json > reg.json
-  #         TASK_DEF_ARN=$(jq -r '.taskDefinition.taskDefinitionArn' reg.json)
-  #         echo "task_def_arn=$TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+      - name: Register new dropall revision
+        id: register
+        run: |
+          aws ecs register-task-definition --cli-input-json file://task-def.json > reg.json
+          TASK_DEF_ARN=$(jq -r '.taskDefinition.taskDefinitionArn' reg.json)
+          echo "task_def_arn=$TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
 
-  #     - name: Run dropall task
-  #       id: run_task
-  #       run: |
-  #         aws ecs run-task \
-  #           --cluster "$CLUSTER_NAME" \
-  #           --launch-type FARGATE \
-  #           --network-configuration "awsvpcConfiguration={subnets=[${{ env.ECS_SUBNETS }}],assignPublicIp=ENABLED}" \
-  #           --task-definition "${{ steps.register.outputs.task_def_arn }}" \
-  #           --count 1 > run.json
-  #         TASK_ARN=$(jq -r '.tasks[0].taskArn' run.json)
-  #         echo "task_arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
+      - name: Run dropall task
+        id: run_task
+        run: |
+          aws ecs run-task \
+            --cluster "$CLUSTER_NAME" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ env.ECS_SUBNETS }}],assignPublicIp=ENABLED}" \
+            --task-definition "${{ steps.register.outputs.task_def_arn }}" \
+            --count 1 > run.json
+          TASK_ARN=$(jq -r '.tasks[0].taskArn' run.json)
+          echo "task_arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
 
-  #     - name: Wait and check exit code
-  #       run: |
-  #         aws ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}"
-  #         aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}" > desc.json
-  #         EXIT_CODE=$(jq -r '.tasks[0].containers[0].exitCode' desc.json)
-  #         echo "Exit code: $EXIT_CODE"
-  #         test "${EXIT_CODE}" = "0"
+      - name: Wait and check exit code
+        run: |
+          aws ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}"
+          aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "${{ steps.run_task.outputs.task_arn }}" > desc.json
+          EXIT_CODE=$(jq -r '.tasks[0].containers[0].exitCode' desc.json)
+          echo "Exit code: $EXIT_CODE"
+          test "${EXIT_CODE}" = "0"
 
   restrict-marketplace-listing:
     runs-on: ubuntu-latest
