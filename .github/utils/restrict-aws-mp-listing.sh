@@ -75,8 +75,8 @@ echo "This will ONLY restrict version ${IMAGE_TAG}."
 echo "Other versions will remain PUBLIC."
 echo "=========================================="
 echo ""
-echo "Proceeding in 5 seconds... (Cancel the GitHub Actions workflow run to abort if this looks incorrect)"
-sleep 5
+echo "Proceeding in 10 seconds... (Cancel the GitHub Actions workflow run to abort if IMAGE_TAG=${IMAGE_TAG} looks incorrect)"
+sleep 10
 
 # Restrict the marketplace listing by removing delivery options
 echo "Restricting AWS Marketplace listing for product ${PRODUCT_ID}..."

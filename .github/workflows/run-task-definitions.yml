@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Liquibase Pro Docker image tag (e.g., 'devopstest101' or '4.31.0')"
+        description: "Liquibase Pro Docker test image_tag (e.g., 'test_image' :this will be restricted if all jobs pass)."
         required: true
 
 permissions:
