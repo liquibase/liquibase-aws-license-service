@@ -4,6 +4,13 @@ set -e  # Exit on error
 # This script restricts the AWS Marketplace listing after successful task definition runs
 # This script is intended to be run as part of a GitHub Actions workflow
 
+# Validate required environment variables
+if [ -z "$IMAGE_TAG" ]; then
+    echo "ERROR: IMAGE_TAG environment variable is required"
+    exit 1
+fi
+
+echo "Restricting delivery options for version: ${IMAGE_TAG}"
 echo "Fetching delivery options for product ${PRODUCT_ID}..."
 
 # Get the product entity details to retrieve delivery option IDs
@@ -13,18 +20,20 @@ ENTITY_DETAILS=$(aws marketplace-catalog describe-entity \
     --region "${AWS_REGION}" \
     --output json)
 
-# Extract all delivery option IDs from the product
-DELIVERY_OPTION_IDS=$(echo "$ENTITY_DETAILS" | jq -r '.Details' | jq -r '.Versions[].DeliveryOptions[].Id' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+# Extract delivery option IDs ONLY for the specified version
+DELIVERY_OPTION_IDS=$(echo "$ENTITY_DETAILS" | jq -r --arg version "$IMAGE_TAG" \
+    '.Details | .Versions[] | select(.VersionTitle == $version) | .DeliveryOptions[].Id' | \
+    jq -R -s -c 'split("\n") | map(select(length > 0))')
 
 # Check if we found any delivery options
 if [ "$DELIVERY_OPTION_IDS" == "[]" ] || [ -z "$DELIVERY_OPTION_IDS" ]; then
-    echo "ERROR: No delivery options found for product ${PRODUCT_ID}"
-    echo "Entity details:"
-    echo "$ENTITY_DETAILS" | jq '.Details'
+    echo "ERROR: No delivery options found for product ${PRODUCT_ID} with version ${IMAGE_TAG}"
+    echo "Available versions:"
+    echo "$ENTITY_DETAILS" | jq -r '.Details.Versions[].VersionTitle'
     exit 1
 fi
 
-echo "Found delivery options to restrict: $DELIVERY_OPTION_IDS"
+echo "Found delivery options for version ${IMAGE_TAG}: $DELIVERY_OPTION_IDS"
 
 # Restrict the marketplace listing by removing delivery options
 echo "Restricting AWS Marketplace listing for product ${PRODUCT_ID}..."
