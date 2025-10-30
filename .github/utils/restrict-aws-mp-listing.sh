@@ -21,15 +21,16 @@ ENTITY_DETAILS=$(aws marketplace-catalog describe-entity \
     --output json)
 
 # Extract delivery option IDs ONLY for the specified version
+# Note: .Details is returned as a JSON string, so we need to parse it first with fromjson
 DELIVERY_OPTION_IDS=$(echo "$ENTITY_DETAILS" | jq -r --arg version "$IMAGE_TAG" \
-    '.Details | .Versions[] | select(.VersionTitle == $version) | .DeliveryOptions[].Id' | \
+    '.Details | fromjson | .Versions[] | select(.VersionTitle == $version) | .DeliveryOptions[].Id' | \
     jq -R -s -c 'split("\n") | map(select(length > 0))')
 
 # Check if we found any delivery options
 if [ "$DELIVERY_OPTION_IDS" == "[]" ] || [ -z "$DELIVERY_OPTION_IDS" ]; then
     echo "ERROR: No delivery options found for product ${PRODUCT_ID} with version ${IMAGE_TAG}"
     echo "Available versions:"
-    echo "$ENTITY_DETAILS" | jq -r '.Details.Versions[].VersionTitle'
+    echo "$ENTITY_DETAILS" | jq -r '.Details | fromjson | .Versions[].VersionTitle'
     exit 1
 fi
 
