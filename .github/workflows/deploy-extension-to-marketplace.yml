@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'This will submit a new version of the listing in AWS Marketplace. Image tag for the ECR liquibase/liquibaseSecure.'
+        description: 'This will submit a new version of the listing in AWS Marketplace. test- Image tag for the ECR liquibase/liquibaseSecure.'
         required: true
-        default: '' # Pass the value like 1.0.0
+        default: '' # Pass the value like test-<liquibase-secure-version>
       dry_run:
         description: 'Run this as a dry run.'
         required: false
@@ -99,10 +99,6 @@ jobs:
           registry: ${{ env.AWS_MP_REGISTRY }}
           username: ${{ env.AWS_MP_ACCESS_KEY }}
           password: ${{ env.AWS_MP_ACCESS_KEY_ID }}
-
-      - name: Random test image tag
-        id: test_tag
-        run: echo "test_tag=test-$(date +%s)" >> $GITHUB_ENV
 
       - name: Build and Push Docker Image
         env:

@@ -1,6 +1,6 @@
 # This workflow will be run manually by QA after the deploy-extension-to-marketplace.yml workflow is run and AWS Marketplace listing is approved.
 
-name: Run ECS task definitions after AWS Marketplace approval
+name: Run ECS task definitions for test_image after AWS Marketplace approval
 
 on:
   workflow_dispatch:
@@ -191,8 +191,8 @@ jobs:
 
   restrict-marketplace-listing:
     runs-on: ubuntu-latest
-    # needs: run-dropall-task
-    # if: ${{ needs.run-dropall-task.result == 'success' }}
+    needs: run-dropall-task
+    if: ${{ needs.run-dropall-task.result == 'success' }}
     env:
       AWS_REGION: us-east-1
     steps:

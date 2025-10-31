@@ -8,7 +8,7 @@ on:
       - 'Dockerfile'
       - 'pom.xml'
   workflow_dispatch:
-    
+
 permissions:
   contents: read
   actions: write
@@ -82,9 +82,9 @@ jobs:
         if: steps.version_changed.outputs.changed == 'true' && steps.verify_match.outputs.match == 'true'
         id: test_version
         run: |
-          # Generate a random test version tag
-          RANDOM_STR=$(cat /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | fold -w 8 | head -n 1)
-          TEST_VERSION="test-${RANDOM_STR}"
+          # Use the liquibase-secure version for the test tag
+          LIQUIBASE_SECURE_VERSION="${{ steps.version_changed.outputs.new_version }}"
+          TEST_VERSION="test-${LIQUIBASE_SECURE_VERSION}"
           echo "Generated test version tag: $TEST_VERSION"
           echo "tag=$TEST_VERSION" >> $GITHUB_OUTPUT
 
