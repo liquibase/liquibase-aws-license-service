@@ -180,7 +180,7 @@ jobs:
           - name: Get latest liquibase docker tag
             id: get_latest_tag
             run: |
-              LATEST_TAG=$(grep -i "^FROM liquibase/liquibase:" Dockerfile | cut -d: -f2)
+              LATEST_TAG=$(grep -i "^FROM liquibase/liquibase-secure:" Dockerfile | head -n1 | sed -E 's/^FROM liquibase\/liquibase-secure:([^ ]+).*/\1/')
               echo "LATEST_TAG=$LATEST_TAG"
               echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
 
