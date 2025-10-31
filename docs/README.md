@@ -1,44 +1,160 @@
 # Liquibase AWS Marketplace Extension Deployment and Testing Process
 
-### 🚀 Deploying a test extension to AWS Marketplace
+## 🚀 Deploying a test extension to AWS Marketplace
 
 1. Check for update of `liquibase-secure.version`: make sure the latest `liquibase-secure.version` is set in both **pom.xml** and **Dockerfile** before submitting an AWS Marketplace version. Check for any dependabot PR's to be merged.
 
 2. Steps that happen for every SECURE release:
 
-a. `dependabot.yml` checks for new Docker dependencies and `liquibase-secure.version` updates, creating PRs when new versions are released.
+a. `dependabot.yml` monitors for new versions and creates PRs:
 
-b. `dependabot-pr-merge-docker-changes.yml` automatically merges Dependabot PRs for both Docker OSS version updates and liquibase-secure.version changes.
+- Docker image updates (Dockerfile)
+- Maven dependency updates (pom.xml)
+- When liquibase-secure is released, Dependabot creates two separate PRs
 
-c. Once the Liquibase Secure Docker image is published (from this workflow https://github.com/liquibase/docker/blob/main/.github/workflows/create-release.yml#L546) you must manually trigger `deploy-extension-to-marketplace.yml` in **dry_run** mode. This publishes a **test_image** to the AWS Marketplace. 
+b. `dependabot-sync-and-merge.yml` automatically syncs versions:
 
-![](./image/dry_run.png)
+- When Docker PR is created, it updates pom.xml to match
+- Consolidates updates into a single PR
+- Auto-merges after tests pass
 
-d. After AWS Marketplace approval ( this takes ~30min), QA manually runs the `run-task-definitions.yml` workflow using the **test_image**. If there are no errors, the **test_image** will be restricted automatically as part of the workflow. 
-**NOTE**: it is going to take a while for the version to be restricted. Approximate 15mins.
+   **Note:** Without this workflow, you'll get two separate PRs that need manual merging to keep versions synchronized.
 
-e. QA then manually runs `deploy-extension-to-marketplace.yml` again (**this time not in dry run**). This submits the actual Liquibase-Secure version to the Marketplace.
+c. `auto-trigger-marketplace-deployment.yml` automatically triggers dry_run deployment when version changes:
+
+- Monitors pushes to main branch that modify Dockerfile or pom.xml
+- Detects if liquibase-secure version actually changed (compares HEAD vs HEAD~1)
+- Verifies Dockerfile and pom.xml versions match
+- Automatically triggers `deploy-extension-to-marketplace.yml` in dry_run mode with a random test version tag
+- Only runs when version truly changes (not on every commit)
+
+d. `deploy-extension-to-marketplace.yml` (dry run) publishes a **test_image** to AWS Marketplace:
+
+- Builds Docker image with new liquibase-secure version
+- Tags image with random test tag (e.g., `test-a7k2m9x3`)
+- Pushes to AWS Marketplace ECR registry
+- Creates change set via AWS Marketplace Catalog API
+
+e. AWS Marketplace processes and approves the test image (~30 min):
+
+- Validates and scans the Docker image
+- Change set status moves from PROCESSING → SUCCEEDED
+
+f. AWS EventBridge polling automation detects approval and triggers testing:
+
+- EventBridge Scheduler runs Lambda function every 5 minutes
+- Lambda (`PollMarketplaceChangeSetStatus`) polls for SUCCEEDED change sets
+- Detects newly approved test images (containing `test-` prefix)
+- Automatically triggers `run-task-definitions.yml` via GitHub API
+- Records processed change sets in DynamoDB to prevent duplicates
+
+g. `run-task-definitions.yml` executes ECS tasks to test the approved image:
+
+- Runs test tasks on `aws-mp-test-cluster`
+- Tests the approved marketplace image
+- If all tests pass, automatically restricts the test image
+
+### Complete Automation Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Dependabot detects liquibase-secure version update          │
+│ (e.g., 5.0.1 → 5.0.2)                                       │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Creates & merges PRs to main branch                         │
+│ (Dockerfile + pom.xml version sync)                         │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ auto-trigger-marketplace-deployment.yml                     │
+│ - Detects version change                                    │
+│ - Generates test tag: test-a7k2m9x3                        │
+│ - Triggers deploy workflow                                  │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ deploy-extension-to-marketplace.yml (dry_run=true)          │
+│ - Builds Docker image with new version                      │
+│ - Pushes to AWS Marketplace as test-a7k2m9x3                │
+│ - Creates change set via AWS API                            │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ AWS Marketplace (~30 min)                                   │
+│ - Validates image                                           │
+│ - Scans for vulnerabilities                                 │
+│ - Change set: PROCESSING → SUCCEEDED                        │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ EventBridge Scheduler (every 5 min)                         │
+│ - Triggers PollMarketplaceChangeSetStatus Lambda            │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Lambda: PollMarketplaceChangeSetStatus                      │
+│ - Lists recent change sets from AWS Marketplace             │
+│ - Finds SUCCEEDED change set for test-a7k2m9x3              │
+│ - Checks DynamoDB (not processed yet)                       │
+│ - Extracts image tag: test-a7k2m9x3                         │
+│ - Calls GitHub API to trigger run-task-definitions.yml      │
+│ - Records in DynamoDB to prevent duplicates                 │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ run-task-definitions.yml                                    │
+│ - Runs ECS tasks on aws-mp-test-cluster                     
+│ - Tests marketplace image: test-a7k2m9x3                    │
+│ - If tests pass: Restricts test image from public access    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Automation Timing
+
+| Phase | Duration | Component |
+|-------|----------|-----------|
+| Version detection | ~1 day | Dependabot |
+| PR merge | Manual | GitHub |
+| Auto-trigger deploy | ~30 sec | GitHub Actions |
+| Deploy to Marketplace | ~5 min | GitHub Actions |
+| AWS Marketplace approval | ~30 min | AWS |
+| Detection by polling | 0-5 min | EventBridge + Lambda |
+| GitHub workflow trigger | ~5 sec | Lambda → GitHub API |
+| ECS task execution | ~10 min | GitHub Actions |
+| **Total (after PR merge)** | **~50 min** | Fully automated |
 
 ### :crystal_ball: Run Task definitions
 
-**⚠️ IMPORTANT: This workflow is ONLY for testing versions, NOT for production releases**
+### ⚠️ IMPORTANT: This workflow is ONLY for testing versions, NOT for production releases
 
 **When to Use**:
+
 - ✅ Testing development versions (e.g., `devopstest101`, `devopstest102`)
 - ✅ Validating pre-release versions before making them public
 - ✅ QA testing of marketplace listings
 
 **When NOT to Use**:
+
 - ❌ DO NOT use for actual production versions (e.g., `4.31.0`, `4.32.0`)
 - ❌ DO NOT use for versions you want to keep publicly available
 - ❌ DO NOT run on versions already released to customers
 
 **What It Does**:
+
 1. Runs ECS tasks to test the specified image_tag version
 2. **Automatically restricts ONLY the tested version using image_tag** in AWS Marketplace after successful testing
 3. Other versions remain publicly available
 
-# :ship: Deploy the actual listing after testing
+## :ship: Deploy the actual listing after testing
 
 1.**After testing** run the workflow [deploy-extension-to-marketplace.yml](https://github.com/liquibase/liquibase-aws-license-service/blob/main/.github/workflows/deploy-extension-to-marketplace.yml) with actual value eg: `4.31.0` with **disabled** "Run this as dry run"
 
@@ -67,12 +183,12 @@ e. QA then manually runs `deploy-extension-to-marketplace.yml` again (**this tim
 8. To add more commands to test in the `aws-mp-test-cluster`, you can add them in the `Task Definitions` section.
 9. Contact the DevOps team to get access to the `LiquibaseAWSMP` AWS account or any other help required.
 
-# :sparkles: New version of `liquibase-aws-license-service`
+## :sparkles: New version of `liquibase-aws-license-service`
 
 1. We release a new version of `liquibase-aws-license-service` only when it is required, as this is a SECURE extension.
 2. When there is a new `liquibase-aws-license-service` version release, the dependabot in LPM(liquibase package manager) repository creates a PR: example : https://github.com/liquibase/liquibase-package-manager/pull/430/files#diff-0b0a9d274bd84c7dbfff4680de10599cd0d96458b06b74a925b2bcd3e3fc2fadR15. We need to **manually** merge the PR. Make sure to review and merge the PR before proceeding.
 
-# Liquibase AWS License Service Extension
+## Liquibase AWS License Service Extension
 
 This Docker image provides a pre-configured Liquibase Secure environment with the AWS License Service extension installed for use in AWS Marketplace environments.
 
