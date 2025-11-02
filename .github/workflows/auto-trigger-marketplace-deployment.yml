@@ -1,5 +1,23 @@
 name: Auto-trigger Marketplace Deployment (Dry Run)
 
+# This workflow automatically initiates test deployments when liquibase-secure version changes
+#
+# Purpose:
+# - Detects when a new liquibase-secure version is merged to main branch
+# - Automatically triggers test image deployment to AWS Marketplace
+# - Starts the automated testing pipeline without manual intervention
+#
+# How it works:
+# - Triggers when Dockerfile or pom.xml are pushed to main
+# - Uses git diff to detect if <liquibase-secure.version> actually changed
+# - Skips if version is unchanged (prevents false triggers on other pom.xml edits)
+# - Generates test image tag: test-<version> (e.g., test-5.0.2)
+# - Triggers deploy-extension-to-marketplace.yml in dry_run mode
+#
+# Trigger conditions:
+# - Automatically: After Dependabot PRs are merged to main
+# - Manually: Can be triggered via workflow_dispatch for testing
+
 on:
   push:
     branches:

@@ -226,3 +226,55 @@ jobs:
         run: |
           chmod +x ./.github/utils/restrict-aws-mp-listing.sh
           ./.github/utils/restrict-aws-mp-listing.sh
+
+      # ============================================================================
+      # Mark test as completed in DynamoDB to enable automated production release
+      # ============================================================================
+      # Purpose:
+      #   - Signals that ECS tests passed and test image restriction was initiated
+      #   - Enables the next phase of automation: production release
+      #
+      # What happens next:
+      #   1. Test image restriction completes (~15 min)
+      #   2. Lambda polls and finds TestStatus=completed in DynamoDB
+      #   3. Lambda verifies restriction change set has Status=SUCCEEDED
+      #   4. Lambda triggers deploy-extension-to-marketplace.yml (dry_run=false)
+      #   5. Production version submitted to AWS Marketplace
+      #
+      # Why needed:
+      #   - AWS Marketplace doesn't allow simultaneous change sets
+      #   - Must wait for restriction to complete before submitting production
+      #   - This DynamoDB flag enables Lambda to detect when ready to proceed
+      # ============================================================================
+      - name: Mark TaskDefinitions as completed in DynamoDB
+        if: success() && startsWith(inputs.image_tag, 'test-')
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+
+          # Find the change set ID for this image tag
+          CHANGE_SETS=$(aws dynamodb scan \
+            --table-name liquibase-secure-marketplace-changesets \
+            --filter-expression "ImageTag = :tag" \
+            --expression-attribute-values '{":tag":{"S":"'"$IMAGE_TAG"'"}}' \
+            --region us-east-1)
+
+          CHANGESET_ID=$(echo "$CHANGE_SETS" | jq -r '.Items[0].ChangeSetId.S // empty')
+
+          if [ -n "$CHANGESET_ID" ]; then
+            echo "Found change set: $CHANGESET_ID for image tag: $IMAGE_TAG"
+
+            # Update the item to mark TaskDefinition as completed
+            aws dynamodb update-item \
+              --table-name liquibase-secure-marketplace-changesets \
+              --key '{"ChangeSetId":{"S":"'"$CHANGESET_ID"'"}}' \
+              --update-expression "SET TestStatus = :status, TestCompletedAt = :timestamp" \
+              --expression-attribute-values '{":status":{"S":"completed"},":timestamp":{"S":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}}' \
+              --region us-east-1
+
+            echo "✅ Marked change set $CHANGESET_ID as TaskDefinition completed"
+            echo "Lambda will detect this and trigger production release after restriction is confirmed"
+          else
+            echo "⚠️  Warning: Could not find change set for image tag: $IMAGE_TAG"
+            echo "Production release will need to be triggered manually"
+          fi
