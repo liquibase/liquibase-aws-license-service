@@ -5,13 +5,15 @@ This directory contains task definition templates for AWS Marketplace ECS tasks.
 ## Task Definitions
 
 ### 1. version-command.json
-- **Purpose**: Verifies Liquibase Pro installation and version
+
+- **Purpose**: Verifies Liquibase Secure installation and version
 - **Command**: `--version`
 - **Container Name**: `Liquibase-Secure`
 - **Log Group**: `/ecs/connect-command`
 - **Resources**: 1024 CPU, 3072 MB memory
 
 ### 2. update-command-dynamodb.json
+
 - **Purpose**: Runs Liquibase update command against DynamoDB
 - **Command**: Liquibase update with DynamoDB changelog from S3
 - **Container Name**: `Liquibase-Secure`
@@ -21,8 +23,11 @@ This directory contains task definition templates for AWS Marketplace ECS tasks.
   - `AWS_REGION=us-east-1`
 - **Volumes**: `common_volume` mounted at `/common`
 
-### 3. dropall-command.json
-- **Purpose**: Drops all database objects (cleanup task)
+### 3. dropall-command.json (DEPRECATED)
+- **Status**: No longer used in workflow - replaced by custom cleanup script
+- **Purpose**: Previously dropped all database objects (cleanup task)
+- **Issue**: Liquibase dropall deletes ALL tables including tracking table
+- **Replacement**: `.github/scripts/cleanup-dynamodb-test-tables.sh`
 - **Command**: `dropall` with S3 configuration
 - **Container Name**: `Liquibase-Secure`
 - **Log Group**: `/ecs/dropall-command`
@@ -30,6 +35,26 @@ This directory contains task definition templates for AWS Marketplace ECS tasks.
 - **Environment Variables**:
   - `INSTALL_MYSQL=true`
   - `AWS_REGION=us-east-1`
+
+## DynamoDB Test Table Cleanup
+
+Instead of using Liquibase `dropall` (which deletes ALL tables), the workflow now uses a custom cleanup script:
+
+**Script**: `.github/scripts/cleanup-dynamodb-test-tables.sh`
+
+**What it does**:
+
+- Lists all DynamoDB tables in the region
+- Deletes only tables matching test patterns (DATABASECHANGELOG, test tables, etc.)
+- **Protects** the `liquibase-secure-marketplace-changesets` tracking table
+- Provides detailed logging of cleanup operations
+
+**Benefits**:
+
+- ✅ Precise control over which tables are deleted
+- ✅ Prevents accidental deletion of tracking/infrastructure tables
+- ✅ No ResourceNotFoundException errors after cleanup
+- ✅ Faster execution (no ECS task needed)
 
 ## Usage
 
