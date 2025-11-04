@@ -1,0 +1,68 @@
+{
+  "family": "update-command-dynamodb",
+  "taskRoleArn": "arn:aws:iam::804611071420:role/ecsTaskExecutionRole",
+  "executionRoleArn": "arn:aws:iam::804611071420:role/ecsTaskExecutionRole",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "Liquibase-Secure",
+      "image": "PLACEHOLDER_IMAGE_URI",
+      "cpu": 0,
+      "essential": true,
+      "command": [
+        "sh",
+        "-c",
+        "liquibase --search-path=s3://aws-marketplace-listing-files/dynamodb --defaults-file=s3://aws-marketplace-listing-files/dynamodb/liquibase.dynamodb.properties update --changelog-file=changelog.xml"
+      ],
+      "environment": [
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "AWS_SDK_LOAD_CONFIG",
+          "value": "true"
+        },
+        {
+          "name": "AWS_EC2_METADATA_DISABLED",
+          "value": "false"
+        }
+      ],
+      "mountPoints": [
+        {
+          "containerPath": "/common",
+          "readOnly": false,
+          "sourceVolume": "common_volume"
+        }
+      ],
+      "volumesFrom": [],
+      "portMappings": [],
+      "systemControls": [],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/update-sql-command",
+          "awslogs-create-group": "true",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "1024",
+  "memory": "3072",
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "placementConstraints": [],
+  "volumes": [
+    {
+      "host": {},
+      "name": "common_volume"
+    }
+  ]
+}

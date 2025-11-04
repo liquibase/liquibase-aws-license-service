@@ -1,5 +1,29 @@
 name: Dependabot - Sync Versions and Auto-merge
 
+# This workflow ensures Dockerfile and pom.xml stay synchronized when Dependabot updates liquibase-secure versions
+#
+# Purpose:
+# - Synchronizes liquibase-secure.version between Dockerfile and pom.xml
+# - Consolidates two separate Dependabot PRs into one
+# - Auto-merges after version sync and tests pass
+#
+# Problem it solves:
+# - Dependabot creates separate PRs for Docker (Dockerfile) and Maven (pom.xml) updates
+# - Without this workflow, versions can get out of sync if only one PR merges
+# - Manual merging of both PRs is error-prone and time-consuming
+#
+# How it works:
+# - Triggers when Dependabot opens/updates a PR modifying Dockerfile or pom.xml
+# - Extracts liquibase-secure version from Dockerfile (source of truth)
+# - Updates pom.xml to match if versions differ
+# - Commits the sync to the same PR
+# - Auto-merges the PR after all checks pass
+#
+# Result:
+# - Single PR with both files synchronized
+# - No manual intervention needed
+# - Prevents version mismatches between build and runtime
+
 on:
   pull_request:
     types: [opened, synchronize]

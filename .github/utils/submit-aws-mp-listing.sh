@@ -10,7 +10,7 @@ DETAILS_JSON=$(cat <<EOF
       },
       "DeliveryOptions": [
         {
-          "DeliveryOptionTitle": "Liquibase Pro Docker Image",
+          "DeliveryOptionTitle": "Liquibase Secure Docker Image",
           "Details": {
             "EcrDeliveryOptionDetails": {
               "ContainerImages": [
@@ -19,7 +19,7 @@ DETAILS_JSON=$(cat <<EOF
               "CompatibleServices": [
                 "ECS", "EKS"
               ],
-              "Description":"This is the official Docker image for Liquibase Pro.",
+              "Description":"This is the official Docker image for Liquibase Secure.",
               "UsageInstructions":"- How to launch Liquibase on AWS: https://docs.liquibase.com/tools-integrations/aws-mp/get-started-aws.html - How to run Liquibase commands on the launched container: https://docs.liquibase.com/tools-integrations/aws-mp/create-task-def.html"
               }
           }
