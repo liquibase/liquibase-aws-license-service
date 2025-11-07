@@ -3,12 +3,12 @@
   <parent>
     <artifactId>liquibase-parent-pom</artifactId>
     <groupId>org.liquibase</groupId>
-    <version>0.5.8</version>
+    <version>1.0.0</version>
     <relativePath>../pom.xml/pom.xml</relativePath>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>liquibase-aws-license-service</artifactId>
-  <version>1.6.0</version>
+  <version>1.0.3-SNAPSHOT</version>
   <url>http://www.liquibase.com</url>
   <licenses>
     <license>
@@ -16,9 +16,6 @@
       <url>https://www.liquibase.com/eula</url>
     </license>
   </licenses>
-  <scm>
-    <tag>temp</tag>
-  </scm>
   <build>
     <plugins>
       <plugin>
@@ -40,7 +37,7 @@
       </plugin>
       <plugin>
         <artifactId>maven-shade-plugin</artifactId>
-        <version>3.6.0</version>
+        <version>3.6.1</version>
         <executions>
           <execution>
             <goals>
@@ -61,7 +58,18 @@
               </transformers>
               <createDependencyReducedPom>true</createDependencyReducedPom>
               <keepDependenciesWithProvidedScope>false</keepDependenciesWithProvidedScope>
-              <promoteTransitiveDependencies>true</promoteTransitiveDependencies>
+              <promoteTransitiveDependencies>false</promoteTransitiveDependencies>
+              <artifactSet>
+                <excludes>
+                  <exclude>com.liquibase:liquibase-commercial</exclude>
+                  <exclude>org.liquibase:liquibase-core</exclude>
+                  <exclude>com.opencsv:opencsv</exclude>
+                  <exclude>org.apache.commons:commons-collections4</exclude>
+                  <exclude>org.apache.commons:commons-text</exclude>
+                  <exclude>org.apache.commons:commons-lang3</exclude>
+                  <exclude>commons-io:commons-io</exclude>
+                </excludes>
+              </artifactSet>
               <filters>
                 <filter>
                   <artifact>*:*</artifact>
@@ -79,11 +87,178 @@
       </plugin>
     </plugins>
   </build>
+  <dependencies>
+    <dependency>
+      <groupId>com.liquibase</groupId>
+      <artifactId>liquibase-commercial</artifactId>
+      <version>5.0.1</version>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <artifactId>snakeyaml</artifactId>
+          <groupId>org.yaml</groupId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.liquibase</groupId>
+      <artifactId>liquibase-core</artifactId>
+      <version>5.0.0</version>
+      <scope>compile</scope>
+      <exclusions>
+        <exclusion>
+          <artifactId>snakeyaml</artifactId>
+          <groupId>org.yaml</groupId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.groovy</groupId>
+      <artifactId>groovy-all</artifactId>
+      <version>4.0.28</version>
+      <type>pom</type>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <artifactId>groovy-testng</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-ant</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-cli-picocli</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-console</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-datetime</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-docgenerator</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-groovydoc</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-groovysh</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-jmx</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-json</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-jsr223</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-macro</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-nio</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-servlet</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-sql</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-swing</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-templates</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-test</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-test-junit5</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-xml</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy-yaml</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>com.athaydes</groupId>
+      <artifactId>spock-reports</artifactId>
+      <version>2.5.1-groovy-4.0</version>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <artifactId>*</artifactId>
+          <groupId>*</groupId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.spockframework</groupId>
+      <artifactId>spock-core</artifactId>
+      <version>2.3-groovy-4.0</version>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <artifactId>junit-platform-engine</artifactId>
+          <groupId>org.junit.platform</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>hamcrest</artifactId>
+          <groupId>org.hamcrest</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>groovy</artifactId>
+          <groupId>org.apache.groovy</groupId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.liquibase</groupId>
+      <artifactId>liquibase-test-harness</artifactId>
+      <version>1.0.11</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.liquibase.ext</groupId>
+      <artifactId>liquibase-disable-analytics</artifactId>
+      <version>1.0.0</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
   <properties>
-    <maven.compiler.target>1.8</maven.compiler.target>
+    <maven.compiler.target>17</maven.compiler.target>
     <sonar.tests>src/test/groovy</sonar.tests>
-    <maven.compiler.source>1.8</maven.compiler.source>
-    <liquibase.version>4.33.0</liquibase.version>
+    <maven.compiler.source>17</maven.compiler.source>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <liquibase-secure.version>5.0.1</liquibase-secure.version>
   </properties>
 </project>
