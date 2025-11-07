@@ -100,9 +100,9 @@ public class AwsLicenseService implements LicenseService {
     @Override
     public String getLicenseInfo() {
         if (licenseIsValid(LicenseTier.PRO.getSubject())) {
-            return "Liquibase Pro " + BUILD_VERSION + " (licensed through AWS License Manager)";
+            return "Liquibase Secure " + BUILD_VERSION + " (licensed through AWS License Manager)";
         } else {
-            return String.format(LIQUIBASE_OPEN_SOURCE_MSG, BUILD_VERSION);
+            return "";
         }
     }
 
