@@ -27,7 +27,7 @@ RUN apt-get update && \
     chmod +x /opt/lpm/lpm
 
 # Stage 2: Use LPM with Liquibase Secure to install extensions (no root needed)
-FROM liquibase/liquibase-secure:5.0.1 AS builder
+FROM liquibase/liquibase-secure:5.0.2 AS builder
 
 # Copy LPM from downloader stage with proper ownership
 COPY --from=downloader --chown=liquibase:liquibase /opt/lpm/lpm /usr/local/bin/lpm
@@ -40,7 +40,7 @@ RUN lpm update && \
     lpm add liquibase-aws-license-service --global
 
 # Stage 3: Final clean image without LPM
-FROM liquibase/liquibase-secure:5.0.1
+FROM liquibase/liquibase-secure:5.0.2
 
 # Marker which indicates this is a Liquibase docker container
 ENV DOCKER_AWS_LIQUIBASE=true
