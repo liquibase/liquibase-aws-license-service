@@ -35,6 +35,13 @@
 <!--            liquibase-core is included and marked as provided because the parent-pom does not mark it as provided, but it needs to be-->
             <scope>provided</scope>
         </dependency>
+        <!-- Explicitly mark liquibase-core as provided to prevent duplicate class definitions -->
+        <dependency>
+            <groupId>org.liquibase</groupId>
+            <artifactId>liquibase-core</artifactId>
+            <version>5.0.0</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>licensemanager</artifactId>
