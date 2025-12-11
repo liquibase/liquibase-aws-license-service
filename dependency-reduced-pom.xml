@@ -91,7 +91,7 @@
     <dependency>
       <groupId>com.liquibase</groupId>
       <artifactId>liquibase-commercial</artifactId>
-      <version>5.0.1</version>
+      <version>5.0.3</version>
       <scope>provided</scope>
       <exclusions>
         <exclusion>
@@ -104,7 +104,7 @@
       <groupId>org.liquibase</groupId>
       <artifactId>liquibase-core</artifactId>
       <version>5.0.0</version>
-      <scope>compile</scope>
+      <scope>provided</scope>
       <exclusions>
         <exclusion>
           <artifactId>snakeyaml</artifactId>
@@ -259,6 +259,6 @@
     <sonar.tests>src/test/groovy</sonar.tests>
     <maven.compiler.source>17</maven.compiler.source>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <liquibase-secure.version>5.0.1</liquibase-secure.version>
+    <liquibase-secure.version>5.0.3</liquibase-secure.version>
   </properties>
 </project>
