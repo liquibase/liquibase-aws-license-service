@@ -27,6 +27,11 @@ on:
       - 'Dockerfile'
       - 'pom.xml'
   workflow_dispatch:
+    inputs:
+      new_version:
+        description: 'New liquibase-secure version (passed from dependabot-sync-and-merge.yml to bypass git diff detection)'
+        required: false
+        type: string
 
 concurrency:
   group: marketplace-deployment
@@ -52,33 +57,41 @@ jobs:
           echo "Current version: $CURRENT_VERSION"
           echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Check if liquibase-secure version changed in this push
+      - name: Check if liquibase-secure version changed
         id: version_changed
         run: |
           CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
+          INPUT_VERSION="${{ inputs.new_version }}"
 
-          # Check if the liquibase-secure.version line was modified in the commits being pushed
-          # Use git diff to check if the specific line changed between HEAD~1 and HEAD
-          DIFF_OUTPUT=$(git diff HEAD~1 HEAD -- pom.xml | grep -E '[-+].*<liquibase-secure.version>' || true)
+          # If new_version was passed via workflow_dispatch, use it directly
+          # This avoids the fragile git diff approach when triggered by dependabot-sync-and-merge.yml
+          if [ -n "$INPUT_VERSION" ]; then
+            echo "✅ Version provided via workflow_dispatch input: $INPUT_VERSION"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "new_version=$INPUT_VERSION" >> $GITHUB_OUTPUT
+          else
+            # Fallback: detect version change via git diff (for push events)
+            DIFF_OUTPUT=$(git diff HEAD~1 HEAD -- pom.xml | grep -E '[-+].*<liquibase-secure.version>' || true)
 
-          if [ -n "$DIFF_OUTPUT" ]; then
-            # Extract the old version from the diff (line starting with -)
-            OLD_VERSION=$(echo "$DIFF_OUTPUT" | grep -E '^-.*<liquibase-secure.version>' | sed -E 's/.*<liquibase-secure.version>([^<]+)<\/liquibase-secure.version>.*/\1/' || echo "")
-            # Extract the new version from the diff (line starting with +)
-            NEW_VERSION=$(echo "$DIFF_OUTPUT" | grep -E '^\+.*<liquibase-secure.version>' | sed -E 's/.*<liquibase-secure.version>([^<]+)<\/liquibase-secure.version>.*/\1/' || echo "")
+            if [ -n "$DIFF_OUTPUT" ]; then
+              # Extract the old version from the diff (line starting with -)
+              OLD_VERSION=$(echo "$DIFF_OUTPUT" | grep -E '^-.*<liquibase-secure.version>' | sed -E 's/.*<liquibase-secure.version>([^<]+)<\/liquibase-secure.version>.*/\1/' || echo "")
+              # Extract the new version from the diff (line starting with +)
+              NEW_VERSION=$(echo "$DIFF_OUTPUT" | grep -E '^\+.*<liquibase-secure.version>' | sed -E 's/.*<liquibase-secure.version>([^<]+)<\/liquibase-secure.version>.*/\1/' || echo "")
 
-            if [ -n "$OLD_VERSION" ] && [ -n "$NEW_VERSION" ] && [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
-              echo "✅ liquibase-secure version changed from $OLD_VERSION to $NEW_VERSION"
-              echo "changed=true" >> $GITHUB_OUTPUT
-              echo "old_version=$OLD_VERSION" >> $GITHUB_OUTPUT
-              echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+              if [ -n "$OLD_VERSION" ] && [ -n "$NEW_VERSION" ] && [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
+                echo "✅ liquibase-secure version changed from $OLD_VERSION to $NEW_VERSION"
+                echo "changed=true" >> $GITHUB_OUTPUT
+                echo "old_version=$OLD_VERSION" >> $GITHUB_OUTPUT
+                echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+              else
+                echo "ℹ️  liquibase-secure.version line modified but version unchanged. Skipping deployment trigger."
+                echo "changed=false" >> $GITHUB_OUTPUT
+              fi
             else
-              echo "ℹ️  liquibase-secure.version line modified but version unchanged. Skipping deployment trigger."
+              echo "ℹ️  No change to liquibase-secure.version detected in this commit. Skipping deployment trigger."
               echo "changed=false" >> $GITHUB_OUTPUT
             fi
-          else
-            echo "ℹ️  No change to liquibase-secure.version detected in this commit. Skipping deployment trigger."
-            echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Verify Dockerfile and pom.xml versions match

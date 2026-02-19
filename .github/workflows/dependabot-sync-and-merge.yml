@@ -169,8 +169,9 @@ jobs:
       - name: Trigger marketplace deployment validation
         if: contains(steps.metadata.outputs.dependency-names, 'liquibase/liquibase-secure')
         run: |
-          echo "🚀 Triggering auto-trigger-marketplace-deployment.yml for version validation and dry-run deployment"
-          gh workflow run auto-trigger-marketplace-deployment.yml --ref main
-          echo "✅ Marketplace deployment validation workflow triggered"
+          NEW_VERSION="${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}"
+          echo "🚀 Triggering auto-trigger-marketplace-deployment.yml for version $NEW_VERSION validation and dry-run deployment"
+          gh workflow run auto-trigger-marketplace-deployment.yml --ref main -f new_version="$NEW_VERSION"
+          echo "✅ Marketplace deployment validation workflow triggered with version $NEW_VERSION"
         env:
           GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}

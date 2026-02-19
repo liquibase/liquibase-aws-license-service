@@ -16,15 +16,16 @@
 │ - Syncs Dockerfile + pom.xml versions                       │
 │ - Auto-merges PR to main                                    │
 │ - Triggers auto-trigger-marketplace-deployment.yml          │
-│   for liquibase-secure updates (via workflow_dispatch)       │
+│   for liquibase-secure updates (via workflow_dispatch        │
+│   with version passed as input)                              │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ auto-trigger-marketplace-deployment.yml                     │
 │ - Triggered by: push to main OR workflow_dispatch from      │
-│   dependabot-sync-and-merge.yml                             │
-│ - Detects version change via git diff                       │
+│   dependabot-sync-and-merge.yml (with version input)        │
+│ - Detects version change via input or git diff fallback     │
 │ - Generates test tag: test-<liquibase-secure.version>       │
 │ - Triggers deploy workflow                                  │
 └────────────────────────┬────────────────────────────────────┘
@@ -118,13 +119,14 @@
 #### 3. `auto-trigger-marketplace-deployment.yml` - Smart Deployment Trigger
 **What it does:** Detects when liquibase-secure version changes in main branch and triggers test deployment
 **Why needed:** Automates the testing process immediately after version updates
-**Triggered by:** Push to main (Dockerfile/pom.xml changes) or workflow_dispatch from dependabot-sync-and-merge.yml
+**Triggered by:** Push to main (Dockerfile/pom.xml changes) or workflow_dispatch from dependabot-sync-and-merge.yml (with version input)
 **Concurrency:** Uses a concurrency group to prevent duplicate deployments if both triggers fire simultaneously
-**Smart detection:** Only triggers when the actual version number changes, not on every pom.xml edit
+**Version detection:** Uses version passed via workflow_dispatch input when available; falls back to git diff for push events. Only triggers when the actual version number changes
 
 #### 4. `deploy-extension-to-marketplace.yml` - Test Image Publisher
 **What it does:** Builds Docker image and submits it to AWS Marketplace with test tag (e.g., `test-5.0.2`)
 **Why needed:** Creates a test version for validation before production release
+**Concurrency:** Uses a concurrency group (`deploy-to-marketplace`) to queue runs instead of running in parallel, preventing duplicate marketplace submissions
 **Modes:**
 - **dry_run=true**: Test image (auto-restricted after testing)
 - **dry_run=false**: Production release (publicly available)
