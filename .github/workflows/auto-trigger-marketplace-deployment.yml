@@ -15,7 +15,8 @@ name: Auto-trigger Marketplace Deployment (Dry Run)
 # - Triggers deploy-extension-to-marketplace.yml in dry_run mode
 #
 # Trigger conditions:
-# - Automatically: After Dependabot PRs are merged to main
+# - Automatically: On push to main when Dockerfile or pom.xml change
+# - Automatically: Via workflow_dispatch from dependabot-sync-and-merge.yml after merging liquibase-secure PRs
 # - Manually: Can be triggered via workflow_dispatch for testing
 
 on:

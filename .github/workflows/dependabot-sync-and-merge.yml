@@ -18,11 +18,14 @@ name: Dependabot - Sync Versions and Auto-merge
 # - Updates pom.xml to match if versions differ
 # - Commits the sync to the same PR
 # - Auto-merges the PR after all checks pass
+# - For liquibase-secure updates: triggers auto-trigger-marketplace-deployment.yml
+#   to validate the version change and initiate a dry-run deployment
 #
 # Result:
 # - Single PR with both files synchronized
 # - No manual intervention needed
 # - Prevents version mismatches between build and runtime
+# - Marketplace deployment pipeline starts reliably without depending on push events
 
 on:
   pull_request:
@@ -160,4 +163,14 @@ jobs:
           gh pr merge --merge "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
+
+      # Step 3: Trigger marketplace deployment for liquibase-secure updates
+      - name: Trigger marketplace deployment validation
+        if: contains(steps.metadata.outputs.dependency-names, 'liquibase/liquibase-secure')
+        run: |
+          echo "🚀 Triggering auto-trigger-marketplace-deployment.yml for version validation and dry-run deployment"
+          gh workflow run auto-trigger-marketplace-deployment.yml --ref main
+          echo "✅ Marketplace deployment validation workflow triggered"
+        env:
           GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
