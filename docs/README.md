@@ -119,6 +119,7 @@
 **What it does:** Detects when liquibase-secure version changes in main branch and triggers test deployment
 **Why needed:** Automates the testing process immediately after version updates
 **Triggered by:** Push to main (Dockerfile/pom.xml changes) or workflow_dispatch from dependabot-sync-and-merge.yml
+**Concurrency:** Uses a concurrency group to prevent duplicate deployments if both triggers fire simultaneously
 **Smart detection:** Only triggers when the actual version number changes, not on every pom.xml edit
 
 #### 4. `deploy-extension-to-marketplace.yml` - Test Image Publisher
