@@ -23,7 +23,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <liquibase-secure.version>5.1.0</liquibase-secure.version>
+        <liquibase-secure.version>5.0.3</liquibase-secure.version>
         <sonar.tests>src/test/groovy</sonar.tests>
     </properties>
 
