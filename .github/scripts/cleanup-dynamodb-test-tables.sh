@@ -46,7 +46,7 @@ for TABLE in $ALL_TABLES; do
     # Skip the protected tracking table
     if [ "$TABLE" = "$PROTECTED_TABLE" ]; then
         echo "🔒 Protected (skipping): $TABLE"
-        ((PROTECTED_COUNT++))
+        PROTECTED_COUNT=$((PROTECTED_COUNT + 1))
         continue
     fi
 
@@ -63,14 +63,14 @@ for TABLE in $ALL_TABLES; do
 
         echo "🗑️  Deleting: $TABLE"
         if aws dynamodb delete-table --table-name "$TABLE" --region "$AWS_REGION" 2>&1; then
-            ((DELETED_COUNT++))
+            DELETED_COUNT=$((DELETED_COUNT + 1))
         else
             echo "   ⚠️  Failed to delete $TABLE (may already be deleting)"
-            ((SKIPPED_COUNT++))
+            SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
         fi
     else
         echo "⏭️  Unknown table (skipping): $TABLE"
-        ((SKIPPED_COUNT++))
+        SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
     fi
 done
 
