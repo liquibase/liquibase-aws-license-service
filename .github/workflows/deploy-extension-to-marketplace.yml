@@ -11,6 +11,10 @@ name: Docker Build and Push to AWS Marketplace
 # - dry_run=true: Builds test image (e.g., test-5.0.2) for validation before production
 # - dry_run=false: Builds production image (uses version from Dockerfile) for public release
 
+concurrency:
+  group: deploy-to-marketplace
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
     inputs:
