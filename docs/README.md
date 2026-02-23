@@ -12,14 +12,20 @@
                          │
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Creates & merges PRs to main branch                         │
-│ (Dockerfile + pom.xml version sync)                         │
+│ dependabot-sync-and-merge.yml                               │
+│ - Syncs Dockerfile + pom.xml versions                       │
+│ - Auto-merges PR to main                                    │
+│ - Triggers auto-trigger-marketplace-deployment.yml          │
+│   for liquibase-secure updates (via workflow_dispatch        │
+│   with version passed as input)                              │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ auto-trigger-marketplace-deployment.yml                     │
-│ - Detects version change                                    │
+│ - Triggered by: push to main OR workflow_dispatch from      │
+│   dependabot-sync-and-merge.yml (with version input)        │
+│ - Detects version change via input or git diff fallback     │
 │ - Generates test tag: test-<liquibase-secure.version>       │
 │ - Triggers deploy workflow                                  │
 └────────────────────────┬────────────────────────────────────┘
@@ -106,18 +112,21 @@
 **Creates:** Separate PRs for Dockerfile and pom.xml updates
 
 #### 2. `dependabot-sync-and-merge.yml` - Version Synchronization
-**What it does:** Ensures Dockerfile and pom.xml use the same liquibase-secure version, then auto-merges
-**Why needed:** Prevents version mismatches between build and runtime; eliminates manual PR merging
-**Without this:** You'd need to manually sync versions and merge two separate PRs
+**What it does:** Ensures Dockerfile and pom.xml use the same liquibase-secure version, auto-merges, and triggers marketplace deployment validation for liquibase-secure updates
+**Why needed:** Prevents version mismatches between build and runtime; eliminates manual PR merging; ensures deployment pipeline starts reliably
+**Without this:** You'd need to manually sync versions, merge two separate PRs, and rely solely on push events to trigger deployment
 
 #### 3. `auto-trigger-marketplace-deployment.yml` - Smart Deployment Trigger
 **What it does:** Detects when liquibase-secure version changes in main branch and triggers test deployment
 **Why needed:** Automates the testing process immediately after version updates
-**Smart detection:** Only triggers when the actual version number changes, not on every pom.xml edit
+**Triggered by:** Push to main (Dockerfile/pom.xml changes) or workflow_dispatch from dependabot-sync-and-merge.yml (with version input)
+**Concurrency:** Uses a concurrency group to prevent duplicate deployments if both triggers fire simultaneously
+**Version detection:** Uses version passed via workflow_dispatch input when available; falls back to git diff for push events. Only triggers when the actual version number changes
 
 #### 4. `deploy-extension-to-marketplace.yml` - Test Image Publisher
 **What it does:** Builds Docker image and submits it to AWS Marketplace with test tag (e.g., `test-5.0.2`)
 **Why needed:** Creates a test version for validation before production release
+**Concurrency:** Uses a concurrency group (`deploy-to-marketplace`) to queue runs instead of running in parallel, preventing duplicate marketplace submissions
 **Modes:**
 - **dry_run=true**: Test image (auto-restricted after testing)
 - **dry_run=false**: Production release (publicly available)
@@ -150,7 +159,7 @@
 | Phase | Duration | Component |
 |-------|----------|-----------|
 | Version detection | ~1 day | Dependabot |
-| PR merge | Manual | GitHub |
+| PR sync & merge | ~2 min | GitHub Actions (dependabot-sync-and-merge.yml) |
 | Auto-trigger test deploy | ~30 sec | GitHub Actions |
 | Deploy test image | ~5 min | GitHub Actions |
 | AWS Marketplace test approval | ~30 min | AWS |
@@ -307,4 +316,5 @@ This repository uses Dependabot and GitHub Actions to automatically monitor and 
 ### 2. Configuration Files
 
 - `.github/dependabot.yml` - Configures Dependabot to monitor Docker, Maven, and GitHub Actions
-- `.github/workflows/dependabot-sync-and-merge.yml` - Syncs pom.xml version and auto-merges Dependabot PRs
+- `.github/workflows/dependabot-sync-and-merge.yml` - Syncs pom.xml version, auto-merges Dependabot PRs, and triggers marketplace deployment for liquibase-secure updates
+- `.github/workflows/auto-trigger-marketplace-deployment.yml` - Validates version change and triggers test deployment to AWS Marketplace
