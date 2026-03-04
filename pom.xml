@@ -1,127 +1,122 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <parent>
-        <groupId>org.liquibase</groupId>
-        <artifactId>liquibase-parent-pom</artifactId>
-        <version>1.0.0</version>
-    </parent>
-
-    <artifactId>liquibase-aws-license-service</artifactId>
-    <version>1.0.5-SNAPSHOT</version>
-
-    <url>http://www.liquibase.com</url>
-    <licenses>
-        <license>
-            <name>Liquibase End-User License Agreement</name>
-            <url>https://www.liquibase.com/eula</url>
-        </license>
-    </licenses>
-
-    <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <liquibase-secure.version>5.1.0</liquibase-secure.version>
-        <sonar.tests>src/test/groovy</sonar.tests>
-    </properties>
-
-    <dependencies>
-        <dependency>
-            <groupId>com.liquibase</groupId>
-            <artifactId>liquibase-commercial</artifactId>
-            <version>${liquibase-secure.version}</version>
-<!--            liquibase-core is included and marked as provided because the parent-pom does not mark it as provided, but it needs to be-->
-            <scope>provided</scope>
-        </dependency>
-        <!-- Explicitly mark liquibase-core as provided to prevent duplicate class definitions -->
-        <dependency>
-            <groupId>org.liquibase</groupId>
-            <artifactId>liquibase-core</artifactId>
-            <version>5.0.1</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>licensemanager</artifactId>
-            <version>2.42.5</version>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>eu.somatik.serviceloader-maven-plugin</groupId>
-                <artifactId>serviceloader-maven-plugin</artifactId>
-                <version>1.4.0</version>
-                <configuration>
-                    <services>
-                        <param>liquibase.license.LicenseService</param>
-                    </services>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>generate</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.6.1</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration>
-                            <useDependencyReducedPomInJar>false</useDependencyReducedPomInJar>
-                            <minimizeJar>false</minimizeJar>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <manifestEntries>
-                                        <Implementation-Title>Liquibase AWS License Service Extension</Implementation-Title>
-                                        <Bundle-Vendor>Liquibase</Bundle-Vendor>
-                                        <Bundle-Version>${project.version}</Bundle-Version>
-                                    </manifestEntries>
-                                </transformer>
-                            </transformers>
-                            <createDependencyReducedPom>true</createDependencyReducedPom>
-                            <keepDependenciesWithProvidedScope>false</keepDependenciesWithProvidedScope>
-                            <promoteTransitiveDependencies>false</promoteTransitiveDependencies>
-                            <artifactSet>
-                                <excludes>
-                                    <!-- Exclude liquibase-commercial and liquibase-core (transitive from parent POM) -->
-                                    <!-- These are provided by the liquibase-secure base image -->
-                                    <exclude>com.liquibase:liquibase-commercial</exclude>
-                                    <exclude>org.liquibase:liquibase-core</exclude>
-                                    <exclude>com.opencsv:opencsv</exclude>
-                                    <exclude>org.apache.commons:commons-collections4</exclude>
-                                    <exclude>org.apache.commons:commons-text</exclude>
-                                    <exclude>org.apache.commons:commons-lang3</exclude>
-                                    <exclude>commons-io:commons-io</exclude>
-                                </excludes>
-                            </artifactSet>
-                            <filters>
-                                <filter>
-                                    <!-- filter out signature files from signed dependencies, else repackaging fails with security ex -->
-                                    <artifact>*:*</artifact>
-                                    <excludes>
-                                        <exclude>META-INF/*.SF</exclude>
-                                        <exclude>META-INF/*.DSA</exclude>
-                                        <exclude>META-INF/*.RSA</exclude>
-                                        <exclude>META-INF/maven/**</exclude>
-                                    </excludes>
-                                </filter>
-                            </filters>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.liquibase</groupId>
+    <artifactId>liquibase-parent-pom</artifactId>
+    <version>1.0.0</version>
+  </parent>
+  <artifactId>liquibase-aws-license-service</artifactId>
+  <version>1.0.5-SNAPSHOT</version>
+  <url>http://www.liquibase.com</url>
+  <licenses>
+    <license>
+      <name>FSL-1.1-ALv2</name>
+      <url>https://fsl.software/FSL-1.1-ALv2.template.md</url>
+      <comments>Functional Source License, Version 1.1, ALv2 Future License</comments>
+    </license>
+  </licenses>
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <liquibase-secure.version>5.1.0</liquibase-secure.version>
+    <sonar.tests>src/test/groovy</sonar.tests>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>com.liquibase</groupId>
+      <artifactId>liquibase-commercial</artifactId>
+      <version>${liquibase-secure.version}</version>
+      <!--            liquibase-core is included and marked as provided because the parent-pom does not mark it as provided, but it needs to be-->
+      <scope>provided</scope>
+    </dependency>
+    <!-- Explicitly mark liquibase-core as provided to prevent duplicate class definitions -->
+    <dependency>
+      <groupId>org.liquibase</groupId>
+      <artifactId>liquibase-core</artifactId>
+      <version>5.0.1</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>licensemanager</artifactId>
+      <version>2.42.5</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>eu.somatik.serviceloader-maven-plugin</groupId>
+        <artifactId>serviceloader-maven-plugin</artifactId>
+        <version>1.4.0</version>
+        <configuration>
+          <services>
+            <param>liquibase.license.LicenseService</param>
+          </services>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.1</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <useDependencyReducedPomInJar>false</useDependencyReducedPomInJar>
+              <minimizeJar>false</minimizeJar>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <manifestEntries>
+                    <Implementation-Title>Liquibase AWS License Service Extension</Implementation-Title>
+                    <Bundle-Vendor>Liquibase</Bundle-Vendor>
+                    <Bundle-Version>${project.version}</Bundle-Version>
+                  </manifestEntries>
+                </transformer>
+              </transformers>
+              <createDependencyReducedPom>true</createDependencyReducedPom>
+              <keepDependenciesWithProvidedScope>false</keepDependenciesWithProvidedScope>
+              <promoteTransitiveDependencies>false</promoteTransitiveDependencies>
+              <artifactSet>
+                <excludes>
+                  <!-- Exclude liquibase-commercial and liquibase-core (transitive from parent POM) -->
+                  <!-- These are provided by the liquibase-secure base image -->
+                  <exclude>com.liquibase:liquibase-commercial</exclude>
+                  <exclude>org.liquibase:liquibase-core</exclude>
+                  <exclude>com.opencsv:opencsv</exclude>
+                  <exclude>org.apache.commons:commons-collections4</exclude>
+                  <exclude>org.apache.commons:commons-text</exclude>
+                  <exclude>org.apache.commons:commons-lang3</exclude>
+                  <exclude>commons-io:commons-io</exclude>
+                </excludes>
+              </artifactSet>
+              <filters>
+                <filter>
+                  <!-- filter out signature files from signed dependencies, else repackaging fails with security ex -->
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>META-INF/maven/**</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>
