@@ -112,8 +112,9 @@
 **Creates:** Separate PRs for Dockerfile and pom.xml updates
 
 #### 2. `dependabot-sync-and-merge.yml` - Version Synchronization
-**What it does:** Ensures Dockerfile and pom.xml use the same liquibase-secure version, auto-merges, and triggers marketplace deployment validation for liquibase-secure updates
+**What it does:** For Dockerfile PRs, ensures pom.xml uses the same liquibase-secure version; auto-merges all Dependabot PRs; triggers marketplace deployment validation for liquibase-secure updates
 **Why needed:** Prevents version mismatches between build and runtime; eliminates manual PR merging; ensures deployment pipeline starts reliably
+**Important:** Version sync only runs when the Dockerfile is modified in the PR. Non-Dockerfile PRs (e.g., Maven dependency bumps) skip the sync to avoid regressing pom.xml from a stale branch.
 **Without this:** You'd need to manually sync versions, merge two separate PRs, and rely solely on push events to trigger deployment
 
 #### 3. `auto-trigger-marketplace-deployment.yml` - Smart Deployment Trigger
@@ -307,10 +308,9 @@ This repository uses Dependabot and GitHub Actions to automatically monitor and 
    FROM liquibase/liquibase-secure:X.Y.Z
    ```
 3. **Automated workflow** (`dependabot-sync-and-merge.yml`) triggers on the Dependabot PR:
-   - Extracts the new version from the Dockerfile
-   - Updates `<liquibase-secure.version>` in pom.xml to match
-   - Commits the change to the same Dependabot PR
-   - Adds a comment showing the version sync
+   - Checks if the Dockerfile was modified in the PR (version sync only applies to Dockerfile changes)
+   - For Dockerfile PRs: extracts the new version, updates `<liquibase-secure.version>` in pom.xml to match, commits the change, and adds a comment showing the version sync
+   - For non-Dockerfile PRs (e.g., Maven dependency bumps): skips version sync to prevent regressing pom.xml from a stale branch
    - Auto-merges the PR after all checks pass
 
 ### 2. Configuration Files
