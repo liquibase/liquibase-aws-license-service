@@ -14,17 +14,18 @@ name: Dependabot - Sync Versions and Auto-merge
 #
 # How it works:
 # - Triggers when Dependabot opens/updates a PR modifying Dockerfile or pom.xml
-# - Extracts liquibase-secure version from Dockerfile (source of truth)
-# - Updates pom.xml to match if versions differ
-# - Commits the sync to the same PR
+# - Checks if the Dockerfile was modified in the PR (via git diff against merge base)
+# - For Dockerfile PRs only: extracts liquibase-secure version and syncs pom.xml to match
+# - Skips version sync for non-Dockerfile PRs to prevent stale branch regressions
 # - Auto-merges the PR after all checks pass
 # - For liquibase-secure updates: triggers auto-trigger-marketplace-deployment.yml
 #   to validate the version change and initiate a dry-run deployment
 #
 # Result:
-# - Single PR with both files synchronized
+# - Single PR with both files synchronized (for Dockerfile PRs)
 # - No manual intervention needed
 # - Prevents version mismatches between build and runtime
+# - Prevents stale branches from regressing pom.xml to older versions
 # - Marketplace deployment pipeline starts reliably without depending on push events
 
 on:
