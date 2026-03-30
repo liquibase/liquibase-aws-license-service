@@ -187,7 +187,7 @@ jobs:
 
       # Step 4: Trigger marketplace deployment for liquibase-secure updates
       - name: Trigger marketplace deployment validation
-        if: contains(steps.metadata.outputs.dependency-names, 'liquibase/liquibase-secure')
+        if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true' && contains(steps.metadata.outputs.dependency-names, 'liquibase/liquibase-secure')
         run: |
           NEW_VERSION="${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}"
           echo "🚀 Triggering auto-trigger-marketplace-deployment.yml for version $NEW_VERSION validation and dry-run deployment"
