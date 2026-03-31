@@ -47,6 +47,7 @@ for TITLE in "${STALE_TITLES[@]}"; do
 
     if [ "$COUNT" -gt 0 ]; then
         echo "  Found $COUNT delivery option(s) for '${TITLE}'"
+        echo "  IDs: $IDS"
         STALE_IDS=$(echo "$STALE_IDS $IDS" | jq -s 'add | unique')
     else
         echo "  No delivery options found for '${TITLE}' (may already be removed)"
@@ -66,12 +67,13 @@ echo "=========================================="
 echo "⚠️  CLEANUP PREVIEW"
 echo "=========================================="
 echo "Product ID: ${PRODUCT_ID}"
-echo "Delivery options to restrict: $STALE_IDS"
-echo "Total: $TOTAL"
+echo "Total delivery options to restrict: $TOTAL"
 echo ""
-echo "This will remove the following stale options:"
+echo "Breakdown by title:"
 for TITLE in "${STALE_TITLES[@]}"; do
-    echo "  - ${TITLE}"
+    TITLE_COUNT=$(echo "$ENTITY_DETAILS" | jq --arg title "$TITLE" \
+        '[.Details | fromjson | .Versions[] | .DeliveryOptions[] | select(.Title == $title)] | length')
+    echo "  - ${TITLE}: ${TITLE_COUNT} option(s)"
 done
 echo ""
 echo "The active 'Liquibase Secure Docker Image' options will NOT be affected."
