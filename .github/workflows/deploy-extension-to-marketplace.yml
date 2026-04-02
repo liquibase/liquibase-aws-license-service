@@ -38,7 +38,7 @@ jobs:
       SECURE_VERSION_MATCH: ${{ steps.check_versions.outputs.versions_match }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Get liquibase Secure version from pom.xml
         id: pom_liquibase_secure_version
@@ -81,36 +81,36 @@ jobs:
       AWS_REGION: us-east-1
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Configure AWS credentials for vault access
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
         with:
           role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: Get secrets from vault
         id: vault-secrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        uses: aws-actions/aws-secretsmanager-get-secrets@3a411b6ec5cace3d626412dd917e7bfeac242cfa # v3.0.0
         with:
           secret-ids: |
             ,/vault/liquibase
           parse-json-secrets: true
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
         with:
           role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
           aws-region: us-east-1
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Login to ECR Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           registry: ${{ env.AWS_MP_REGISTRY }}
           username: ${{ env.AWS_MP_ACCESS_KEY }}
@@ -119,7 +119,7 @@ jobs:
       - name: Build and Push Docker Image
         env:
           ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:
           context: .
           file: Dockerfile
@@ -154,36 +154,36 @@ jobs:
         AWS_REGION: us-east-1
       steps:
           - name: Checkout
-            uses: actions/checkout@v6
+            uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
           - name: Configure AWS credentials for vault access
-            uses: aws-actions/configure-aws-credentials@v6
+            uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
             with:
               role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
               aws-region: us-east-1
 
           - name: Get secrets from vault
             id: vault-secrets
-            uses: aws-actions/aws-secretsmanager-get-secrets@v2
+            uses: aws-actions/aws-secretsmanager-get-secrets@3a411b6ec5cace3d626412dd917e7bfeac242cfa # v3.0.0
             with:
               secret-ids: |
                 ,/vault/liquibase
               parse-json-secrets: true
 
           - name: Configure AWS Credentials
-            uses: aws-actions/configure-aws-credentials@v6
+            uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
             with:
               role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
               aws-region: us-east-1
 
           - name: Set up QEMU
-            uses: docker/setup-qemu-action@v3
+            uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
 
           - name: Set up Docker Buildx
-            uses: docker/setup-buildx-action@v3
+            uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
           - name: Login to ECR Registry
-            uses: docker/login-action@v3
+            uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
             with:
               registry: ${{ env.AWS_MP_REGISTRY }}
               username: ${{ env.AWS_MP_ACCESS_KEY }}
@@ -199,7 +199,7 @@ jobs:
           - name: Build and Push Docker Image
             env:
               ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
-            uses: docker/build-push-action@v6
+            uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
             with:
               context: .
               file: Dockerfile

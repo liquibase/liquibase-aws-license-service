@@ -46,7 +46,7 @@ jobs:
     if: github.actor == 'dependabot[bot]' && github.repository == 'liquibase/liquibase-aws-license-service'
     steps:
       - name: Checkout PR branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
@@ -134,7 +134,7 @@ jobs:
 
       - name: Comment on PR about version sync
         if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true' && steps.check_versions.outputs.versions_match == 'false'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const dockerfileVersion = '${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}';
@@ -158,14 +158,14 @@ jobs:
 
       # Step 3: Auto-merge the PR after sync
       - name: Configure AWS credentials for vault access
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
         with:
           role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: Get secrets from vault
         id: vault-secrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        uses: aws-actions/aws-secretsmanager-get-secrets@3a411b6ec5cace3d626412dd917e7bfeac242cfa # v3.0.0
         with:
           secret-ids: |
             ,/vault/liquibase
@@ -173,7 +173,7 @@ jobs:
 
       - name: Fetch Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
