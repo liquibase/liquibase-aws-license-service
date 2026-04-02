@@ -14,17 +14,18 @@ name: Dependabot - Sync Versions and Auto-merge
 #
 # How it works:
 # - Triggers when Dependabot opens/updates a PR modifying Dockerfile or pom.xml
-# - Extracts liquibase-secure version from Dockerfile (source of truth)
-# - Updates pom.xml to match if versions differ
-# - Commits the sync to the same PR
+# - Checks if the Dockerfile was modified in the PR (via git diff against merge base)
+# - For Dockerfile PRs only: extracts liquibase-secure version and syncs pom.xml to match
+# - Skips version sync for non-Dockerfile PRs to prevent stale branch regressions
 # - Auto-merges the PR after all checks pass
 # - For liquibase-secure updates: triggers auto-trigger-marketplace-deployment.yml
 #   to validate the version change and initiate a dry-run deployment
 #
 # Result:
-# - Single PR with both files synchronized
+# - Single PR with both files synchronized (for Dockerfile PRs)
 # - No manual intervention needed
 # - Prevents version mismatches between build and runtime
+# - Prevents stale branches from regressing pom.xml to older versions
 # - Marketplace deployment pipeline starts reliably without depending on push events
 
 on:
@@ -50,8 +51,25 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      # Step 1: Sync pom.xml version to match Dockerfile
+      # Step 1: Check if this PR modifies the Dockerfile (liquibase-secure update)
+      # Only sync versions when Dockerfile is changed — syncing from a stale branch
+      # Dockerfile can regress pom.xml to an older version (see PR #509 incident)
+      - name: Check if Dockerfile changed in this PR
+        id: check_dockerfile_changed
+        run: |
+          # Compare the PR branch against its merge base with main to see if Dockerfile was modified
+          MERGE_BASE=$(git merge-base HEAD origin/main)
+          if git diff --name-only "$MERGE_BASE" HEAD | grep -q '^Dockerfile$'; then
+            echo "dockerfile_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Dockerfile was modified in this PR — will sync versions"
+          else
+            echo "dockerfile_changed=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Dockerfile not modified in this PR — skipping version sync"
+          fi
+
+      # Step 2: Sync pom.xml version to match Dockerfile (only for Dockerfile PRs)
       - name: Extract version from Dockerfile
+        if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true'
         id: extract_dockerfile_version
         run: |
           DOCKERFILE_VERSION=$(grep -E '^FROM liquibase/liquibase-secure:' Dockerfile | head -1 | cut -d':' -f2 | cut -d' ' -f1)
@@ -59,6 +77,7 @@ jobs:
           echo "dockerfile_version=$DOCKERFILE_VERSION" >> $GITHUB_OUTPUT
 
       - name: Extract version from pom.xml
+        if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true'
         id: extract_pom_version
         run: |
           POM_VERSION=$(grep -oE '<liquibase-secure.version>[^<]+</liquibase-secure.version>' pom.xml | sed -E 's/<\/?liquibase-secure.version>//g')
@@ -66,6 +85,7 @@ jobs:
           echo "pom_version=$POM_VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if versions match
+        if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true'
         id: check_versions
         run: |
           DOCKERFILE_VER="${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}"
@@ -80,7 +100,7 @@ jobs:
           fi
 
       - name: Update pom.xml with Dockerfile version
-        if: steps.check_versions.outputs.versions_match == 'false'
+        if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true' && steps.check_versions.outputs.versions_match == 'false'
         run: |
           NEW_VERSION="${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}"
           echo "Updating pom.xml liquibase-secure.version to: $NEW_VERSION"
@@ -92,7 +112,7 @@ jobs:
           grep -B2 -A2 "liquibase-secure.version" pom.xml
 
       - name: Commit version sync
-        if: steps.check_versions.outputs.versions_match == 'false'
+        if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true' && steps.check_versions.outputs.versions_match == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -113,7 +133,7 @@ jobs:
                     fi
 
       - name: Comment on PR about version sync
-        if: steps.check_versions.outputs.versions_match == 'false'
+        if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true' && steps.check_versions.outputs.versions_match == 'false'
         uses: actions/github-script@v8
         with:
           script: |
@@ -136,7 +156,7 @@ jobs:
               Both files now reference the same Liquibase Secure version.`
                           });
 
-      # Step 2: Auto-merge the PR after sync
+      # Step 3: Auto-merge the PR after sync
       - name: Configure AWS credentials for vault access
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -165,9 +185,9 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
 
-      # Step 3: Trigger marketplace deployment for liquibase-secure updates
+      # Step 4: Trigger marketplace deployment for liquibase-secure updates
       - name: Trigger marketplace deployment validation
-        if: contains(steps.metadata.outputs.dependency-names, 'liquibase/liquibase-secure')
+        if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true' && contains(steps.metadata.outputs.dependency-names, 'liquibase/liquibase-secure')
         run: |
           NEW_VERSION="${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}"
           echo "🚀 Triggering auto-trigger-marketplace-deployment.yml for version $NEW_VERSION validation and dry-run deployment"
