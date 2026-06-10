@@ -22,7 +22,26 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <liquibase-secure.version>5.2.0</liquibase-secure.version>
     <sonar.tests>src/test/groovy</sonar.tests>
+    <!-- Must match amazon.aws.version in liquibase-aws-extension so the shaded AWS SDK
+         in the Secure image stays on a single version (avoids the XXHASH3 checksums
+         clash). See TECHOPS-622. -->
+    <amazon.aws.version>2.42.38</amazon.aws.version>
   </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- Pin every software.amazon.awssdk:* artifact (incl. checksums / checksums-spi)
+           to one consistent version so the license-service jar does not drift ahead of
+           the S3/DynamoDB extension bundled in the same image. -->
+      <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>bom</artifactId>
+        <version>${amazon.aws.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
   <dependencies>
     <dependency>
       <groupId>com.liquibase</groupId>
@@ -41,7 +60,9 @@
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>licensemanager</artifactId>
-      <version>2.46.7</version>
+      <!-- Version managed by the AWS SDK BOM (amazon.aws.version) above. Do not pin here:
+           a standalone version let Dependabot bump it ahead of the bundled S3/DynamoDB
+           extension and broke the test-5.2.0 image (TECHOPS-622). -->
     </dependency>
   </dependencies>
   <build>
