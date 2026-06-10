@@ -25,7 +25,7 @@
     <!-- Must match amazon.aws.version in liquibase-aws-extension so the shaded AWS SDK
          in the Secure image stays on a single version (avoids the XXHASH3 checksums
          clash). See TECHOPS-622. -->
-    <amazon.aws.version>2.42.38</amazon.aws.version>
+    <amazon.aws.version>2.42.40</amazon.aws.version>
   </properties>
 
   <dependencyManagement>
