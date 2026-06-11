@@ -16,6 +16,13 @@ updates:
     pull-request-branch-name:
       separator: "-"
     labels: ["sdou"]
+    # amazon.aws.version must stay matched to the AWS SDK bundled in the
+    # liquibase-aws-extension inside the Secure base image (2.42.40). Letting
+    # Dependabot bump it ahead re-introduces the XXHASH3 checksums clash that
+    # broke the test-5.2.0 image. See TECHOPS-622. Bump this manually, in
+    # lockstep with the extension, only.
+    ignore:
+      - dependency-name: "software.amazon.awssdk:*"
 
   - package-ecosystem: "docker"
     directory: "/"
