@@ -21,6 +21,62 @@ jobs:
     steps:
       - run: "true"
 
+  # Guard: the AWS SDK shaded into this jar must stay on the same version as the
+  # SDK bundled in liquibase-aws-extension inside the Secure base image. When they
+  # drift the classpath carries two SDK versions and the older one wins for some
+  # classes -> NoSuchFieldError (the XXHASH3 checksums clash, TECHOPS-622). This
+  # fails the build on drift so a skewed jar can never be released. It replaces
+  # the (wrong) safety net Dependabot used to provide before it was blocked from
+  # bumping software.amazon.awssdk:* in .github/dependabot.yml.
+  verify-amazon-aws-version:
+    needs: authorize
+    runs-on: ubuntu-latest
+    # Reads the private liquibase-pro repo via the vault PAT; skip on forks where
+    # the OIDC role / PAT are unavailable so external PRs are not blocked.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Configure AWS credentials for vault access
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        with:
+          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Get secrets from vault
+        id: vault-secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@2cb1a461cbd4865ac4299648312e4704c646cd53 # v3.0.1
+        with:
+          secret-ids: |
+            ,/vault/liquibase
+          parse-json-secrets: true
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify amazon.aws.version matches liquibase-aws-extension
+        env:
+          GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
+        run: |
+          set -euo pipefail
+          UPSTREAM=$(gh api "repos/liquibase/liquibase-pro/contents/cloud-integrations/liquibase-aws-extension/pom.xml" --jq '.content' \
+            | base64 -d \
+            | grep -oE '<amazon.aws.version>[^<]+</amazon.aws.version>' \
+            | head -1 \
+            | sed -E 's/<\/?amazon.aws.version>//g')
+          LOCAL=$(grep -oE '<amazon.aws.version>[^<]+</amazon.aws.version>' pom.xml \
+            | head -1 \
+            | sed -E 's/<\/?amazon.aws.version>//g')
+          echo "liquibase-aws-extension (source of truth): ${UPSTREAM:-<empty>}"
+          echo "liquibase-aws-license-service (this repo):  ${LOCAL:-<empty>}"
+          if [ -z "$UPSTREAM" ]; then
+            echo "::error::Could not read amazon.aws.version from liquibase-aws-extension pom"
+            exit 1
+          fi
+          if [ "$UPSTREAM" != "$LOCAL" ]; then
+            echo "::error::amazon.aws.version drift: this repo pins $LOCAL but liquibase-aws-extension bundles $UPSTREAM. The shaded AWS SDK must match the SDK in the Secure base image (TECHOPS-622). Update <amazon.aws.version> in pom.xml to $UPSTREAM."
+            exit 1
+          fi
+          echo "✅ amazon.aws.version is in sync at $LOCAL"
+
   build-test:
     needs: authorize
     uses: liquibase/build-logic/.github/workflows/pro-extension-test.yml@main
