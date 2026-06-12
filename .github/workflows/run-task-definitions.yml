@@ -108,9 +108,12 @@ jobs:
   cleanup-dynamodb-test-tables:
     runs-on: ubuntu-latest
     needs: run-core-tasks
-      # Cleanup DynamoDB test tables after successful test completion
-      # Uses custom script instead of Liquibase dropall to protect tracking table
-    if: ${{ needs.run-core-tasks.result == 'success' && inputs.image_tag != '' }}
+      # Tear down DynamoDB test tables whether the test passed OR failed. A failed
+      # run still creates tables (e.g. updateGlobalIndexTest); gating cleanup on
+      # success left them behind, and the next run failed with ResourceInUseException
+      # ("Table already exists") — a self-perpetuating cycle. always() breaks it.
+      # Uses custom script instead of Liquibase dropall to protect the tracking table.
+    if: ${{ always() && inputs.image_tag != '' }}
     env:
       AWS_REGION: us-east-1
 
@@ -146,8 +149,11 @@ jobs:
 
   restrict-marketplace-listing:
     runs-on: ubuntu-latest
-    needs: cleanup-dynamodb-test-tables
-    if: ${{ needs.cleanup-dynamodb-test-tables.result == 'success' }}
+    needs: [run-core-tasks, cleanup-dynamodb-test-tables]
+    # Only restrict/publish the listing when the TESTS passed. cleanup now runs on
+    # failure too (always()), so its success alone must not gate publishing — the
+    # core tasks must have succeeded as well.
+    if: ${{ needs.run-core-tasks.result == 'success' && needs.cleanup-dynamodb-test-tables.result == 'success' }}
     env:
       AWS_REGION: us-east-1
     steps:

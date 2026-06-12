@@ -54,6 +54,7 @@ for TABLE in $ALL_TABLES; do
     # Add more patterns here based on your changelog.xml table names
     if [[ "$TABLE" == "DATABASECHANGELOG" ]] || \
        [[ "$TABLE" == "DATABASECHANGELOGLOCK" ]] || \
+       [[ "$TABLE" == "updateGlobalIndexTest" ]] || \
        [[ "$TABLE" == "liquibase-test-"* ]] || \
        [[ "$TABLE" == "person" ]] || \
        [[ "$TABLE" == "company" ]] || \
