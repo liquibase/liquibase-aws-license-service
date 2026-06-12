@@ -197,7 +197,7 @@ jobs:
       #
       # What happens next:
       #   1. Test image restriction completes (~15 min)
-      #   2. Lambda polls and finds TestStatus=completed in DynamoDB
+      #   2. Lambda polls and finds testStatus=completed in DynamoDB
       #   3. Lambda verifies restriction change set has Status=SUCCEEDED
       #   4. Lambda triggers deploy-extension-to-marketplace.yml (dry_run=false)
       #   5. Production version submitted to AWS Marketplace
@@ -216,11 +216,11 @@ jobs:
           # Find the change set ID for this image tag
           CHANGE_SETS=$(aws dynamodb scan \
             --table-name liquibase-secure-marketplace-changesets \
-            --filter-expression "ImageTag = :tag" \
+            --filter-expression "imageTag = :tag" \
             --expression-attribute-values '{":tag":{"S":"'"$IMAGE_TAG"'"}}' \
             --region us-east-1)
 
-          CHANGESET_ID=$(echo "$CHANGE_SETS" | jq -r '.Items[0].ChangeSetId.S // empty')
+          CHANGESET_ID=$(echo "$CHANGE_SETS" | jq -r '.Items[0].changeSetId.S // empty')
 
           if [ -n "$CHANGESET_ID" ]; then
             echo "Found change set: $CHANGESET_ID for image tag: $IMAGE_TAG"
@@ -228,8 +228,8 @@ jobs:
             # Update the item to mark TaskDefinition as completed
             aws dynamodb update-item \
               --table-name liquibase-secure-marketplace-changesets \
-              --key '{"ChangeSetId":{"S":"'"$CHANGESET_ID"'"}}' \
-              --update-expression "SET TestStatus = :status, TestCompletedAt = :timestamp" \
+              --key '{"changeSetId":{"S":"'"$CHANGESET_ID"'"}}' \
+              --update-expression "SET testStatus = :status, testCompletedAt = :timestamp" \
               --expression-attribute-values '{":status":{"S":"completed"},":timestamp":{"S":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}}' \
               --region us-east-1
 
