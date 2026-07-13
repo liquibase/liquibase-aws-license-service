@@ -9,8 +9,10 @@ name: Auto-trigger Marketplace Deployment (Dry Run)
 #
 # How it works:
 # - Triggers when Dockerfile or pom.xml are pushed to main
-# - Uses git diff to detect if <liquibase-secure.version> actually changed
-# - Skips if version is unchanged (prevents false triggers on other pom.xml edits)
+# - Uses git diff on BOTH pom.xml (<liquibase-secure.version>) and the Dockerfile
+#   (FROM liquibase/liquibase-secure:<version>) to detect if the version actually changed.
+#   Dependabot bumps these in separate PRs/commits, so a commit may touch only one file.
+# - Skips if version is unchanged (prevents false triggers on other pom.xml/Dockerfile edits)
 # - Generates test image tag: test-<version> (e.g., test-5.0.2)
 # - Triggers deploy-extension-to-marketplace.yml in dry_run mode
 #
@@ -70,26 +72,47 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "new_version=$INPUT_VERSION" >> $GITHUB_OUTPUT
           else
-            # Fallback: detect version change via git diff (for push events)
-            DIFF_OUTPUT=$(git diff HEAD~1 HEAD -- pom.xml | grep -E '[-+].*<liquibase-secure.version>' || true)
+            # Fallback: detect version change via git diff (for push events).
+            # Check BOTH pom.xml (<liquibase-secure.version>) and the Dockerfile
+            # (FROM liquibase/liquibase-secure:<version>). Dependabot bumps these
+            # in separate PRs that can merge in separate commits, so a commit may
+            # touch only one of them. Diffing only pom.xml misses Dockerfile-only bumps.
 
-            if [ -n "$DIFF_OUTPUT" ]; then
-              # Extract the old version from the diff (line starting with -)
-              OLD_VERSION=$(echo "$DIFF_OUTPUT" | grep -E '^-.*<liquibase-secure.version>' | sed -E 's/.*<liquibase-secure.version>([^<]+)<\/liquibase-secure.version>.*/\1/' || echo "")
-              # Extract the new version from the diff (line starting with +)
-              NEW_VERSION=$(echo "$DIFF_OUTPUT" | grep -E '^\+.*<liquibase-secure.version>' | sed -E 's/.*<liquibase-secure.version>([^<]+)<\/liquibase-secure.version>.*/\1/' || echo "")
+            # --- pom.xml ---
+            POM_DIFF=$(git diff HEAD~1 HEAD -- pom.xml | grep -E '[-+].*<liquibase-secure.version>' || true)
+            POM_OLD=$(echo "$POM_DIFF" | grep -E '^-.*<liquibase-secure.version>' | sed -E 's/.*<liquibase-secure.version>([^<]+)<\/liquibase-secure.version>.*/\1/' || echo "")
+            POM_NEW=$(echo "$POM_DIFF" | grep -E '^\+.*<liquibase-secure.version>' | sed -E 's/.*<liquibase-secure.version>([^<]+)<\/liquibase-secure.version>.*/\1/' || echo "")
 
-              if [ -n "$OLD_VERSION" ] && [ -n "$NEW_VERSION" ] && [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
-                echo "✅ liquibase-secure version changed from $OLD_VERSION to $NEW_VERSION"
-                echo "changed=true" >> $GITHUB_OUTPUT
-                echo "old_version=$OLD_VERSION" >> $GITHUB_OUTPUT
-                echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            # --- Dockerfile ---
+            DOCKER_DIFF=$(git diff HEAD~1 HEAD -- Dockerfile | grep -E '^[-+]FROM liquibase/liquibase-secure:' || true)
+            DOCKER_OLD=$(echo "$DOCKER_DIFF" | grep -E '^-FROM liquibase/liquibase-secure:' | sed -E 's/.*liquibase-secure:([^ ]+).*/\1/' || echo "")
+            DOCKER_NEW=$(echo "$DOCKER_DIFF" | grep -E '^\+FROM liquibase/liquibase-secure:' | sed -E 's/.*liquibase-secure:([^ ]+).*/\1/' || echo "")
+
+            # A real bump requires a new version that differs from the old one, in either file.
+            POM_CHANGED=false
+            if [ -n "$POM_NEW" ] && [ "$POM_OLD" != "$POM_NEW" ]; then POM_CHANGED=true; fi
+            DOCKER_CHANGED=false
+            if [ -n "$DOCKER_NEW" ] && [ "$DOCKER_OLD" != "$DOCKER_NEW" ]; then DOCKER_CHANGED=true; fi
+
+            if [ "$POM_CHANGED" = "true" ] || [ "$DOCKER_CHANGED" = "true" ]; then
+              # Prefer the version from pom.xml when it changed; otherwise use the Dockerfile.
+              if [ "$POM_CHANGED" = "true" ]; then
+                OLD_VERSION="$POM_OLD"
+                NEW_VERSION="$POM_NEW"
               else
-                echo "ℹ️  liquibase-secure.version line modified but version unchanged. Skipping deployment trigger."
-                echo "changed=false" >> $GITHUB_OUTPUT
+                OLD_VERSION="$DOCKER_OLD"
+                NEW_VERSION="$DOCKER_NEW"
               fi
+              echo "✅ liquibase-secure version changed from ${OLD_VERSION:-unknown} to $NEW_VERSION (pom.xml changed: $POM_CHANGED, Dockerfile changed: $DOCKER_CHANGED)"
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "old_version=$OLD_VERSION" >> $GITHUB_OUTPUT
+              echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
             else
-              echo "ℹ️  No change to liquibase-secure.version detected in this commit. Skipping deployment trigger."
+              if [ -n "$POM_DIFF" ] || [ -n "$DOCKER_DIFF" ]; then
+                echo "ℹ️  liquibase-secure version line modified but version unchanged. Skipping deployment trigger."
+              else
+                echo "ℹ️  No change to liquibase-secure version detected in this commit. Skipping deployment trigger."
+              fi
               echo "changed=false" >> $GITHUB_OUTPUT
             fi
           fi
