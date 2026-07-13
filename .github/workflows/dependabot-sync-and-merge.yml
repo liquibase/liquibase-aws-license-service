@@ -179,8 +179,14 @@ jobs:
 
       - name: Auto-merge Dependabot PR
         run: |
-          echo "✅ Versions are now synchronized. Auto-merging PR..."
-          gh pr merge --merge "$PR_URL"
+          # Use --auto so the merge WAITS for required status checks (notably the
+          # verify-amazon-aws-version drift guard in test.yml) instead of merging
+          # immediately. A liquibase-secure bump that drifts the shaded AWS SDK ahead
+          # of the pinned amazon.aws.version must NOT auto-merge (TECHOPS-911).
+          # Requires branch protection on main with verify-amazon-aws-version as a
+          # required check and auto-merge enabled on the repo.
+          echo "✅ Versions synchronized. Enabling auto-merge (waits for required checks)..."
+          gh pr merge --auto --merge "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
