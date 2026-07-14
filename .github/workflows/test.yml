@@ -68,11 +68,15 @@ jobs:
           LOCAL=$(grep -oE '<amazon.aws.version>[^<]+</amazon.aws.version>' pom.xml \
             | head -1 \
             | sed -E 's/<\/?amazon.aws.version>//g')
-          UPSTREAM=$(gh api "repos/liquibase/liquibase-pro/contents/pom.xml?ref=v${SECURE_VERSION}" --jq '.content' \
+          # Tolerate an empty/failed read (unpublished v<version> tag, transient gh api
+          # failure, missing property) so the `if [ -z "$UPSTREAM" ]` guard below can print
+          # its descriptive ::error:: and exit 1. Without `|| true`, pipefail + set -e abort
+          # here with a bare non-zero exit and the descriptive message never shows.
+          UPSTREAM=$(gh api "repos/liquibase/liquibase-pro/contents/pom.xml?ref=v${SECURE_VERSION}" --jq '.content' 2>/dev/null \
             | base64 -d \
             | grep -oE '<aws-sdk.version>[^<]+</aws-sdk.version>' \
             | head -1 \
-            | sed -E 's/<\/?aws-sdk.version>//g')
+            | sed -E 's/<\/?aws-sdk.version>//g' || true)
           echo "liquibase-secure version:                   ${SECURE_VERSION:-<empty>}"
           echo "liquibase-pro v${SECURE_VERSION} aws-sdk.version (source of truth): ${UPSTREAM:-<empty>}"
           echo "liquibase-aws-license-service (this repo):   ${LOCAL:-<empty>}"
