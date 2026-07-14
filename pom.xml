@@ -137,6 +137,23 @@
                   </excludes>
                 </filter>
               </filters>
+              <!-- Relocate the bundled AWS SDK into a private package so it cannot collide
+                   with the AWS SDK shaded by other extensions in the same image (e.g. the
+                   liquibase-dynamodb extension). Without this, two copies of
+                   software.amazon.awssdk share class names on the classpath and the older one
+                   can win, causing NoSuchFieldError at DynamoDB client build time (SECURE-508).
+                   This extension only uses licensemanager + auth.credentials, so relocating its
+                   whole AWS SDK is safe and decouples it from the distro's SDK version. -->
+              <relocations>
+                <relocation>
+                  <pattern>software.amazon.awssdk</pattern>
+                  <shadedPattern>com.liquibase.ext.awslicense.shaded.software.amazon.awssdk</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>software.amazon.eventstream</pattern>
+                  <shadedPattern>com.liquibase.ext.awslicense.shaded.software.amazon.eventstream</shadedPattern>
+                </relocation>
+              </relocations>
             </configuration>
           </execution>
         </executions>
