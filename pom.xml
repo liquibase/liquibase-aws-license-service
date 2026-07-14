@@ -22,10 +22,13 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <liquibase-secure.version>5.2.1</liquibase-secure.version>
     <sonar.tests>src/test/groovy</sonar.tests>
-    <!-- Must match amazon.aws.version in liquibase-aws-extension so the shaded AWS SDK
-         in the Secure image stays on a single version (avoids the XXHASH3 checksums
-         clash). See TECHOPS-622. -->
-    <amazon.aws.version>2.42.40</amazon.aws.version>
+    <!-- Must match aws-sdk.version in the liquibase-pro root pom for the tag matching
+         liquibase-secure.version above (v${liquibase-secure.version}), so the shaded AWS
+         SDK in the Secure image stays on a single version (avoids the XXHASH3 checksums
+         clash / SdkClientOption NoSuchFieldError). Bump this in lockstep with every
+         liquibase-secure bump. The verify-amazon-aws-version job in test.yml enforces it.
+         See TECHOPS-622 / TECHOPS-911. -->
+    <amazon.aws.version>2.46.20</amazon.aws.version>
   </properties>
 
   <dependencyManagement>

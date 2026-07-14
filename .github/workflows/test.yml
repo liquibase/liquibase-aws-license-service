@@ -52,30 +52,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Verify amazon.aws.version matches liquibase-aws-extension
+      - name: Verify amazon.aws.version matches the Secure image's shaded AWS SDK
         env:
           GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
         run: |
           set -euo pipefail
-          UPSTREAM=$(gh api "repos/liquibase/liquibase-pro/contents/cloud-integrations/liquibase-aws-extension/pom.xml" --jq '.content' \
-            | base64 -d \
-            | grep -oE '<amazon.aws.version>[^<]+</amazon.aws.version>' \
+          # The shaded AWS SDK is set by aws-sdk.version in the liquibase-pro ROOT pom
+          # (inherited by liquibase-aws-extension via its parent). Read it at the tag that
+          # matches the liquibase-secure version this repo builds against, NOT main — main
+          # drifts ahead of the released image. Property lives in the root pom, not the
+          # extension pom, and is named aws-sdk.version (not amazon.aws.version).
+          SECURE_VERSION=$(grep -oE '<liquibase-secure.version>[^<]+</liquibase-secure.version>' pom.xml \
             | head -1 \
-            | sed -E 's/<\/?amazon.aws.version>//g')
+            | sed -E 's/<\/?liquibase-secure.version>//g')
           LOCAL=$(grep -oE '<amazon.aws.version>[^<]+</amazon.aws.version>' pom.xml \
             | head -1 \
             | sed -E 's/<\/?amazon.aws.version>//g')
-          echo "liquibase-aws-extension (source of truth): ${UPSTREAM:-<empty>}"
-          echo "liquibase-aws-license-service (this repo):  ${LOCAL:-<empty>}"
+          # Tolerate an empty/failed read (unpublished v<version> tag, transient gh api
+          # failure, missing property) so the `if [ -z "$UPSTREAM" ]` guard below can print
+          # its descriptive ::error:: and exit 1. Without `|| true`, pipefail + set -e abort
+          # here with a bare non-zero exit and the descriptive message never shows.
+          UPSTREAM=$(gh api "repos/liquibase/liquibase-pro/contents/pom.xml?ref=v${SECURE_VERSION}" --jq '.content' 2>/dev/null \
+            | base64 -d \
+            | grep -oE '<aws-sdk.version>[^<]+</aws-sdk.version>' \
+            | head -1 \
+            | sed -E 's/<\/?aws-sdk.version>//g' || true)
+          echo "liquibase-secure version:                   ${SECURE_VERSION:-<empty>}"
+          echo "liquibase-pro v${SECURE_VERSION} aws-sdk.version (source of truth): ${UPSTREAM:-<empty>}"
+          echo "liquibase-aws-license-service (this repo):   ${LOCAL:-<empty>}"
           if [ -z "$UPSTREAM" ]; then
-            echo "::error::Could not read amazon.aws.version from liquibase-aws-extension pom"
+            echo "::error::Could not read aws-sdk.version from liquibase-pro root pom at tag v${SECURE_VERSION}. Confirm the tag exists and the property is present."
             exit 1
           fi
           if [ "$UPSTREAM" != "$LOCAL" ]; then
-            echo "::error::amazon.aws.version drift: this repo pins $LOCAL but liquibase-aws-extension bundles $UPSTREAM. The shaded AWS SDK must match the SDK in the Secure base image (TECHOPS-622). Update <amazon.aws.version> in pom.xml to $UPSTREAM."
+            echo "::error::amazon.aws.version drift: this repo pins $LOCAL but liquibase-secure $SECURE_VERSION shades $UPSTREAM. The shaded AWS SDK must match the SDK in the Secure base image (TECHOPS-622/TECHOPS-911). Update <amazon.aws.version> in pom.xml to $UPSTREAM."
             exit 1
           fi
-          echo "✅ amazon.aws.version is in sync at $LOCAL"
+          echo "✅ amazon.aws.version is in sync with liquibase-secure $SECURE_VERSION at $LOCAL"
 
   build-test:
     needs: authorize
