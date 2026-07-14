@@ -28,7 +28,7 @@
          clash / SdkClientOption NoSuchFieldError). Bump this in lockstep with every
          liquibase-secure bump. The verify-amazon-aws-version job in test.yml enforces it.
          See TECHOPS-622 / TECHOPS-911. -->
-    <amazon.aws.version>2.46.20</amazon.aws.version>
+    <amazon.aws.version>2.42.40</amazon.aws.version>
   </properties>
 
   <dependencyManagement>
