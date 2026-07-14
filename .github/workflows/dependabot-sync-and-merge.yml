@@ -163,11 +163,15 @@ jobs:
           set -euo pipefail
           SECURE_VERSION="${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}"
           LOCAL=$(grep -oE '<amazon.aws.version>[^<]+</amazon.aws.version>' pom.xml | head -1 | sed -E 's/<\/?amazon.aws.version>//g')
-          UPSTREAM=$(gh api "repos/liquibase/liquibase-pro/contents/pom.xml?ref=v${SECURE_VERSION}" --jq '.content' \
+          # Tolerate an empty/failed upstream read (unpublished v<version> tag, transient
+          # gh api failure, missing property) so the `if [ -z "$UPSTREAM" ]` fallback below
+          # can degrade gracefully. Without `|| true`, pipefail + set -e would abort the step
+          # before the fallback and hard-fail the whole sync job (TECHOPS-911 review).
+          UPSTREAM=$(gh api "repos/liquibase/liquibase-pro/contents/pom.xml?ref=v${SECURE_VERSION}" --jq '.content' 2>/dev/null \
             | base64 -d \
             | grep -oE '<aws-sdk.version>[^<]+</aws-sdk.version>' \
             | head -1 \
-            | sed -E 's/<\/?aws-sdk.version>//g')
+            | sed -E 's/<\/?aws-sdk.version>//g' || true)
           echo "liquibase-secure $SECURE_VERSION shades aws-sdk ${UPSTREAM:-<empty>}; repo pins ${LOCAL:-<empty>}"
           if [ -z "$UPSTREAM" ]; then
             echo "::warning::Could not read aws-sdk.version from liquibase-pro at v${SECURE_VERSION}. Leaving amazon.aws.version as-is; the verify-amazon-aws-version required check will block the merge until resolved."
