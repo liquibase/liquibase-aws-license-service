@@ -21,13 +21,12 @@ jobs:
     steps:
       - run: "true"
 
-  # Guard: the AWS SDK shaded into this jar must stay on the same version as the
-  # SDK bundled in liquibase-aws-extension inside the Secure base image. When they
-  # drift the classpath carries two SDK versions and the older one wins for some
-  # classes -> NoSuchFieldError (the XXHASH3 checksums clash, TECHOPS-622). This
-  # fails the build on drift so a skewed jar can never be released. It replaces
-  # the (wrong) safety net Dependabot used to provide before it was blocked from
-  # bumping software.amazon.awssdk:* in .github/dependabot.yml.
+  # Advisory: reports (but no longer fails on) drift between this jar's amazon.aws.version
+  # and the AWS SDK in the Secure base image. Version-matching stopped being load-bearing
+  # once this jar's AWS SDK was relocated to a private package (TECHOPS-911), so two SDK
+  # copies can no longer collide regardless of version. Kept as a warning for hygiene /
+  # visibility. Previously this failed the build to prevent a NoSuchFieldError from a
+  # skewed classpath (TECHOPS-622); the relocation makes that impossible.
   verify-amazon-aws-version:
     needs: authorize
     runs-on: ubuntu-latest
@@ -80,15 +79,15 @@ jobs:
           echo "liquibase-secure version:                   ${SECURE_VERSION:-<empty>}"
           echo "liquibase-pro v${SECURE_VERSION} aws-sdk.version (source of truth): ${UPSTREAM:-<empty>}"
           echo "liquibase-aws-license-service (this repo):   ${LOCAL:-<empty>}"
+          # Advisory only: warn, never fail. The bundled AWS SDK is relocated, so a version
+          # difference here can no longer cause a runtime collision (TECHOPS-911).
           if [ -z "$UPSTREAM" ]; then
-            echo "::error::Could not read aws-sdk.version from liquibase-pro root pom at tag v${SECURE_VERSION}. Confirm the tag exists and the property is present."
-            exit 1
+            echo "::warning::Could not read aws-sdk.version from liquibase-pro root pom at tag v${SECURE_VERSION}. Skipping drift comparison (advisory)."
+          elif [ "$UPSTREAM" != "$LOCAL" ]; then
+            echo "::warning::amazon.aws.version differs: this repo pins $LOCAL but liquibase-secure $SECURE_VERSION uses $UPSTREAM. Advisory only (bundled AWS SDK is relocated). Consider updating <amazon.aws.version> for hygiene."
+          else
+            echo "✅ amazon.aws.version is in sync with liquibase-secure $SECURE_VERSION at $LOCAL"
           fi
-          if [ "$UPSTREAM" != "$LOCAL" ]; then
-            echo "::error::amazon.aws.version drift: this repo pins $LOCAL but liquibase-secure $SECURE_VERSION shades $UPSTREAM. The shaded AWS SDK must match the SDK in the Secure base image (TECHOPS-622/TECHOPS-911). Update <amazon.aws.version> in pom.xml to $UPSTREAM."
-            exit 1
-          fi
-          echo "✅ amazon.aws.version is in sync with liquibase-secure $SECURE_VERSION at $LOCAL"
 
   build-test:
     needs: authorize

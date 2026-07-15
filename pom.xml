@@ -22,20 +22,25 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <liquibase-secure.version>5.2.1</liquibase-secure.version>
     <sonar.tests>src/test/groovy</sonar.tests>
-    <!-- Must match aws-sdk.version in the liquibase-pro root pom for the tag matching
-         liquibase-secure.version above (v${liquibase-secure.version}), so the shaded AWS
-         SDK in the Secure image stays on a single version (avoids the XXHASH3 checksums
-         clash / SdkClientOption NoSuchFieldError). Bump this in lockstep with every
-         liquibase-secure bump. The verify-amazon-aws-version job in test.yml enforces it.
-         See TECHOPS-622 / TECHOPS-911. -->
+    <!-- Pins the AWS SDK this extension bundles to one version so its own artifacts
+         (checksums / checksums-spi / eventstream) stay internally consistent. As of
+         TECHOPS-911 this NO LONGER has to match aws-sdk.version in the liquibase-pro root
+         pom: the shade config below relocates software.amazon.awssdk into a private package
+         (com.liquibase.ext.awslicense.shaded.*), so our copy cannot collide with the Secure
+         image's copy regardless of version (no XXHASH3 checksums clash / SdkClientOption
+         NoSuchFieldError). The verify-amazon-aws-version job in test.yml is advisory only
+         (warns on drift, never fails): keep this reasonably current for hygiene, not
+         correctness. See TECHOPS-622 / TECHOPS-911. -->
     <amazon.aws.version>2.46.20</amazon.aws.version>
   </properties>
 
   <dependencyManagement>
     <dependencies>
       <!-- Pin every software.amazon.awssdk:* artifact (incl. checksums / checksums-spi)
-           to one consistent version so the license-service jar does not drift ahead of
-           the S3/DynamoDB extension bundled in the same image. -->
+           to one consistent version so the AWS SDK we bundle is internally consistent.
+           Cross-extension version matching is no longer required (TECHOPS-911): the shade
+           config relocates this SDK into a private package, so it cannot collide with the
+           S3/DynamoDB extension's copy in the same image. -->
       <dependency>
         <groupId>software.amazon.awssdk</groupId>
         <artifactId>bom</artifactId>
@@ -137,6 +142,23 @@
                   </excludes>
                 </filter>
               </filters>
+              <!-- Relocate the bundled AWS SDK into a private package so it cannot collide
+                   with the AWS SDK shaded by other extensions in the same image (e.g. the
+                   liquibase-dynamodb extension). Without this, two copies of
+                   software.amazon.awssdk share class names on the classpath and the older one
+                   can win, causing NoSuchFieldError at DynamoDB client build time (SECURE-508).
+                   This extension only uses licensemanager + auth.credentials, so relocating its
+                   whole AWS SDK is safe and decouples it from the distro's SDK version. -->
+              <relocations>
+                <relocation>
+                  <pattern>software.amazon.awssdk</pattern>
+                  <shadedPattern>com.liquibase.ext.awslicense.shaded.software.amazon.awssdk</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>software.amazon.eventstream</pattern>
+                  <shadedPattern>com.liquibase.ext.awslicense.shaded.software.amazon.eventstream</shadedPattern>
+                </relocation>
+              </relocations>
             </configuration>
           </execution>
         </executions>
