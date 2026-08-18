@@ -31,7 +31,7 @@
          NoSuchFieldError). The verify-amazon-aws-version job in test.yml is advisory only
          (warns on drift, never fails): keep this reasonably current for hygiene, not
          correctness. See TECHOPS-622 / TECHOPS-911. -->
-    <amazon.aws.version>2.46.20</amazon.aws.version>
+    <amazon.aws.version>2.49.5</amazon.aws.version>
   </properties>
 
   <dependencyManagement>
