@@ -220,6 +220,33 @@ jobs:
               echo "LATEST_TAG=$LATEST_TAG"
               echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
 
+          # This job builds and submits whatever version the Dockerfile on main
+          # says, which is not necessarily the version that was validated. The
+          # poller dispatches the validated version as image_tag so the two can
+          # be compared here. A mismatch means main moved between validation and
+          # release, and publishing would ship a version nobody tested. Public
+          # marketplace versions cannot be deleted, only restricted, so this
+          # fails instead.
+          #
+          # image_tag is empty for manual dispatches that intend "just release
+          # what is on main"; those skip the check rather than fail.
+          - name: Verify the Dockerfile matches the validated version
+            env:
+              VALIDATED_VERSION: "${{ inputs.image_tag }}"
+              DOCKERFILE_VERSION: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
+            run: |
+              if [ -z "${VALIDATED_VERSION}" ]; then
+                echo "No validated version supplied; releasing the Dockerfile version ${DOCKERFILE_VERSION}."
+                exit 0
+              fi
+
+              if [ "${VALIDATED_VERSION}" != "${DOCKERFILE_VERSION}" ]; then
+                echo "::error::Validated version '${VALIDATED_VERSION}' does not match Dockerfile version '${DOCKERFILE_VERSION}'. Refusing to publish an unvalidated version."
+                exit 1
+              fi
+
+              echo "✅ Dockerfile version ${DOCKERFILE_VERSION} matches the validated version."
+
           - name: Build and Push Docker Image
             env:
               ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}

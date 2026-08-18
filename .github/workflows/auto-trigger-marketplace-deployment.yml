@@ -61,9 +61,12 @@ jobs:
 
       - name: Check if liquibase-secure version changed
         id: version_changed
+        env:
+          CURRENT_VERSION_IN: ${{ steps.current_version.outputs.version }}
+          INPUT_VERSION_IN: ${{ inputs.new_version }}
         run: |
-          CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
-          INPUT_VERSION="${{ inputs.new_version }}"
+          CURRENT_VERSION="${CURRENT_VERSION_IN}"
+          INPUT_VERSION="${INPUT_VERSION_IN}"
 
           # If new_version was passed via workflow_dispatch, use it directly
           # This avoids the fragile git diff approach when triggered by dependabot-sync-and-merge.yml
@@ -140,9 +143,16 @@ jobs:
       - name: Generate test version tag
         if: steps.version_changed.outputs.changed == 'true' && steps.verify_match.outputs.match == 'true'
         id: test_version
+        env:
+          # Expanded into the environment rather than into the script text.
+          # new_version can originate from the workflow_dispatch input, so a
+          # crafted value would otherwise run as shell code in this step.
+          NEW_VERSION: ${{ steps.version_changed.outputs.new_version }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          # Use the liquibase-secure version for the test tag, plus the run number
-          # so each attempt gets a tag of its own.
+          # Use the liquibase-secure version for the test tag, plus the run
+          # number and attempt so each attempt gets a tag of its own.
           #
           # The tag used to be exactly test-<version>. Two things make that a
           # one-shot: ECR tags are immutable, so a rebuild cannot reuse the tag,
@@ -151,8 +161,12 @@ jobs:
           # that version permanently unreleasable and recovery meant inventing a
           # tag by hand. That is how the listing accumulated its devopstest-*
           # entries. Keep the test- prefix: the polling Lambda selects on it.
-          LIQUIBASE_SECURE_VERSION="${{ steps.version_changed.outputs.new_version }}"
-          TEST_VERSION="test-${LIQUIBASE_SECURE_VERSION}-${{ github.run_number }}"
+          # run_number alone is not enough: it is fixed for the life of a run,
+          # and "Re-run failed jobs" keeps it while incrementing run_attempt.
+          # Without the attempt, the retry path described above regenerates the
+          # previous tag and hits the immutable ECR tag all over again.
+          LIQUIBASE_SECURE_VERSION="${NEW_VERSION}"
+          TEST_VERSION="test-${LIQUIBASE_SECURE_VERSION}-${RUN_NUMBER}.${RUN_ATTEMPT}"
           echo "Generated test version tag: $TEST_VERSION"
           echo "tag=$TEST_VERSION" >> $GITHUB_OUTPUT
 

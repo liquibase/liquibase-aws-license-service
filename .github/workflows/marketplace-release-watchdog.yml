@@ -25,7 +25,10 @@ on:
       stall_hours:
         description: 'Hours a completed test may wait for release before it counts as stalled'
         required: false
-        default: '3'
+        # Two, not three: the schedule runs every two hours, so a three-hour
+        # threshold lets a stall sit undetected for up to five. The expected
+        # end-to-end wait is about one hour, so two still leaves slack.
+        default: '2'
 
 permissions:
   contents: read
@@ -44,7 +47,7 @@ jobs:
       AWS_REGION: us-east-1
       TABLE_NAME: liquibase-secure-marketplace-changesets
       PRODUCT_ID: prod-l2panlvbozc5e
-      STALL_HOURS: ${{ inputs.stall_hours || '3' }}
+      STALL_HOURS: ${{ inputs.stall_hours || '2' }}
     steps:
       - name: Configure AWS credentials for vault access
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
@@ -88,17 +91,22 @@ jobs:
             exit 0
           fi
 
-          # createdDate is an ISO-8601 string written by the poller.
-          jq -r '.Items[] | [(.imageTag.S // "unknown"), (.changeSetId.S // "unknown"), (.createdDate.S // "unknown")] | @tsv' scan.json > waiting.tsv
+          # Measure from testCompletedAt, written by run-task-definitions.yml at
+          # the moment it sets testStatus=completed. createdDate is stamped when
+          # the poller first tracks the change set, well before validation
+          # finishes, so a long validation would otherwise look stalled the
+          # instant it completed. Fall back to createdDate for rows written
+          # before testCompletedAt existed.
+          jq -r '.Items[] | [(.imageTag.S // "unknown"), (.changeSetId.S // "unknown"), (.testCompletedAt.S // .createdDate.S // "unknown")] | @tsv' scan.json > waiting.tsv
 
           STALLED=0
           CUTOFF=$(( $(date -u +%s) - STALL_HOURS * 3600 ))
 
-          while IFS=$'\t' read -r TAG CHANGESET CREATED; do
-            CREATED_TS=$(date -u -d "${CREATED}" +%s 2>/dev/null || echo 0)
+          while IFS=$'\t' read -r TAG CHANGESET COMPLETED; do
+            CREATED_TS=$(date -u -d "${COMPLETED}" +%s 2>/dev/null || echo 0)
 
             if [ "${CREATED_TS}" -eq 0 ]; then
-              echo "⚠️  ${TAG} (${CHANGESET}): unparseable createdDate '${CREATED}', treating as stalled"
+              echo "⚠️  ${TAG} (${CHANGESET}): unparseable completion time '${COMPLETED}', treating as stalled"
               STALLED=$((STALLED + 1))
               continue
             fi

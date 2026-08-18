@@ -355,8 +355,23 @@ class ProductionReleaseTest(unittest.TestCase):
             triggered = lf.release_validated_versions()
 
         self.assertEqual(triggered, 1)
-        trigger.assert_called_once_with(lf.GITHUB_WORKFLOW_PROD, image_tag='', dry_run=False)
+        # The bare version, never the test tag: the production title is public
+        # and permanent, and the workflow compares it against the Dockerfile to
+        # refuse publishing something nobody validated.
+        trigger.assert_called_once_with(lf.GITHUB_WORKFLOW_PROD, image_tag='5.2.2', dry_run=False)
         update.assert_called_once_with('cs1', 'production_released')
+
+    @patch.object(lf, 'update_test_status')
+    @patch.object(lf, 'trigger_github_workflow', return_value=True)
+    @patch.object(lf, 'get_completed_tests')
+    def test_strips_the_run_suffix_before_releasing(self, completed, trigger, _update):
+        """A run-suffixed tag must not become the public version title."""
+        completed.return_value = [{'changeSetId': 'cs1', 'imageTag': 'test-5.2.2-482.1'}]
+
+        with patch.object(lf, 'find_restriction_changeset', return_value={'ChangeSetId': 'r', 'Status': 'SUCCEEDED'}):
+            lf.release_validated_versions()
+
+        trigger.assert_called_once_with(lf.GITHUB_WORKFLOW_PROD, image_tag='5.2.2', dry_run=False)
 
     @patch.object(lf, 'trigger_github_workflow')
     @patch.object(lf, 'get_completed_tests')
@@ -449,6 +464,55 @@ class AccessDeniedTest(unittest.TestCase):
         )
 
         self.assertIsNone(lf.find_restriction_changeset(TEST_TAG))
+
+
+class ReleasedVersionTest(unittest.TestCase):
+    """Turning a test tag back into the version to publish."""
+
+    def test_strips_run_number_and_attempt(self):
+        self.assertEqual(lf.released_version('test-5.2.2-482.1'), '5.2.2')
+
+    def test_strips_bare_run_number(self):
+        self.assertEqual(lf.released_version('test-5.2.2-482'), '5.2.2')
+
+    def test_tolerates_tags_predating_the_suffix(self):
+        self.assertEqual(lf.released_version('test-5.2.2'), '5.2.2')
+
+    def test_keeps_a_prerelease_qualifier(self):
+        """Only a trailing run suffix goes; the version's own hyphen stays."""
+        self.assertEqual(lf.released_version('test-5.2.2-beta-482.1'), '5.2.2-beta')
+        self.assertEqual(lf.released_version('test-5.2.2-rc1-9.2'), '5.2.2-rc1')
+
+
+class CompletedTestsPaginationTest(unittest.TestCase):
+    """Scan applies its filter after the 1 MB page limit, so pages can come back
+    empty while later ones still hold completed tests."""
+
+    def test_follows_last_evaluated_key(self):
+        table = MagicMock()
+        table.scan.side_effect = [
+            {'Items': [{'changeSetId': 'a'}], 'LastEvaluatedKey': {'changeSetId': 'a'}},
+            {'Items': [], 'LastEvaluatedKey': {'changeSetId': 'b'}},
+            {'Items': [{'changeSetId': 'c'}]},
+        ]
+
+        with patch.object(lf, 'table', table):
+            items = lf.get_completed_tests()
+
+        self.assertEqual([i['changeSetId'] for i in items], ['a', 'c'])
+        self.assertEqual(table.scan.call_count, 3)
+
+    def test_returns_partial_results_on_failure(self):
+        table = MagicMock()
+        table.scan.side_effect = [
+            {'Items': [{'changeSetId': 'a'}], 'LastEvaluatedKey': {'changeSetId': 'a'}},
+            Exception('throttled'),
+        ]
+
+        with patch.object(lf, 'table', table):
+            items = lf.get_completed_tests()
+
+        self.assertEqual([i['changeSetId'] for i in items], ['a'])
 
 
 class ContractWithRepoTest(unittest.TestCase):

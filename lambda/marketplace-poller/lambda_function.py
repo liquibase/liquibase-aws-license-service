@@ -26,6 +26,7 @@ changes, RESTRICTION_CHANGE_TYPE below has to change with it.
 
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 import boto3
@@ -199,16 +200,35 @@ def trigger_github_workflow(workflow, image_tag=None, dry_run=None):
 
 
 def get_completed_tests():
-    """Return tracked items whose validation passed but which have not been released."""
+    """Return tracked items whose validation passed but which have not been released.
+
+    Follows LastEvaluatedKey. Scan returns at most 1 MB per call, and the filter
+    is applied after that limit, so a single page can come back short or even
+    empty while later pages still hold completed tests. Reading only the first
+    page would leave those unreleased and, as ever here, silently: the table
+    keeps 90 days of history, so this gets likelier as it grows.
+    """
+    items = []
+    kwargs = {
+        'FilterExpression': 'testStatus = :status',
+        'ExpressionAttributeValues': {':status': 'completed'},
+    }
+
     try:
-        response = table.scan(
-            FilterExpression='testStatus = :status',
-            ExpressionAttributeValues={':status': 'completed'},
-        )
-        return response.get('Items', [])
+        while True:
+            response = table.scan(**kwargs)
+            items.extend(response.get('Items', []))
+
+            last_key = response.get('LastEvaluatedKey')
+            if not last_key:
+                return items
+
+            kwargs['ExclusiveStartKey'] = last_key
     except Exception as e:
         print(f"Error scanning for completed tests: {str(e)}")
-        return []
+        # Return what was read rather than dropping it: a partial list still
+        # releases real work, and the next invocation retries the remainder.
+        return items
 
 
 def change_details(change):
@@ -398,6 +418,18 @@ def extract_version_title(detail_response):
     return None
 
 
+def released_version(image_tag):
+    """Strip the test prefix and the run suffix to get the version to release.
+
+    The auto-trigger tags as test-<version>-<run_number>.<run_attempt>, so
+    test-5.2.2-482.1 describes a build of 5.2.2. Only a trailing run suffix is
+    removed, so a prerelease version keeps its own hyphen: test-5.2.2-beta-482.1
+    yields 5.2.2-beta. Tags predating the suffix still yield the bare version.
+    """
+    version = image_tag[len(TEST_TAG_PREFIX):]
+    return re.sub(r'-\d+(?:\.\d+)?$', '', version)
+
+
 def process_new_versions():
     """PART 1: dispatch validation for newly published test versions."""
     processed = 0
@@ -488,11 +520,19 @@ def release_validated_versions():
 
         print(f"✅ Test image {image_tag} is successfully restricted!")
 
-        version = image_tag[len(TEST_TAG_PREFIX):]
+        version = released_version(image_tag)
         print(f"🚀 Triggering production release for version {version}...")
 
-        # Empty image_tag means the deploy workflow uses the Dockerfile version.
-        if trigger_github_workflow(GITHUB_WORKFLOW_PROD, image_tag='', dry_run=False):
+        # The production job builds and submits the version it reads from the
+        # Dockerfile on main, not the tag dispatched here. If main has moved on
+        # since this image was validated, that publishes a version nobody
+        # validated. Passing the validated version lets the workflow compare the
+        # two and refuse rather than release the wrong one.
+        #
+        # It is deliberately the bare version, not image_tag: the production
+        # title is public and permanent, so it must read 5.2.2 and never
+        # test-5.2.2-482.1.
+        if trigger_github_workflow(GITHUB_WORKFLOW_PROD, image_tag=version, dry_run=False):
             update_test_status(changeset_id, 'production_released')
             triggered += 1
             print(f"✅ Successfully triggered production release for version {version}")
