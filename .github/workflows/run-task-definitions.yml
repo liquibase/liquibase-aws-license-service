@@ -16,6 +16,10 @@ permissions:
 jobs:
   run-core-tasks:
     runs-on: ubuntu-latest
+    # `aws ecs wait tasks-stopped` bounds itself at ~10 minutes, so a healthy leg
+    # finishes well inside this. The ceiling exists so a hung step fails in half
+    # an hour instead of occupying a runner until GitHub's 6-hour limit.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -52,8 +56,15 @@ jobs:
           aws-region: us-east-1
           role-session-name: AWSMarketplaceApprovalSession
 
+      # jq ships with ubuntu-latest, so this normally installs nothing and the
+      # only thing it reliably does is reach out to an Ubuntu mirror. When that
+      # mirror stalls, apt-get update hangs with no timeout of its own and takes
+      # the whole validation run with it. Two runs on 2026-08-18 hung here for
+      # over half an hour on a different matrix leg each time, and cancelling
+      # one of them also cancelled restrict-marketplace-listing, leaving a test
+      # image public that should have been withdrawn.
       - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: command -v jq >/dev/null || (sudo apt-get update && sudo apt-get install -y jq)
 
       - name: Build IMAGE_URI from tag
         id: resolve_image
@@ -107,6 +118,7 @@ jobs:
 
   cleanup-dynamodb-test-tables:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: run-core-tasks
       # Tear down DynamoDB test tables whether the test passed OR failed. A failed
       # run still creates tables (e.g. updateGlobalIndexTest); gating cleanup on
@@ -149,6 +161,7 @@ jobs:
 
   restrict-marketplace-listing:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [run-core-tasks, cleanup-dynamodb-test-tables]
     # Only restrict/publish the listing when the TESTS passed. cleanup now runs on
     # failure too (always()), so its success alone must not gate publishing — the
