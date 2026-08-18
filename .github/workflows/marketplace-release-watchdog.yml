@@ -43,6 +43,7 @@ jobs:
     env:
       AWS_REGION: us-east-1
       TABLE_NAME: liquibase-secure-marketplace-changesets
+      PRODUCT_ID: prod-l2panlvbozc5e
       STALL_HOURS: ${{ inputs.stall_hours || '3' }}
     steps:
       - name: Configure AWS credentials for vault access
@@ -112,11 +113,95 @@ jobs:
             fi
           done < waiting.tsv
 
+          echo "STALLED=${STALLED}" >> "$GITHUB_ENV"
+          echo "AWAITING=${COUNT}" >> "$GITHUB_ENV"
+
+      # The check above only sees versions the poller already tracked. It is
+      # blind to the opposite failure: a test version published to the listing
+      # that the poller never picked up at all, so nothing was ever written to
+      # DynamoDB. That happens if the poller is down or wedged for longer than
+      # its LOOKBACK_DAYS window, after which the version falls out of its scan
+      # permanently and no amount of waiting recovers it.
+      #
+      # A test version still Public and untracked is the signature. Restricted
+      # ones have already been through validation.
+      - name: Look for test versions the poller never picked up
+        run: |
+          set -euo pipefail
+
+          aws marketplace-catalog describe-entity \
+            --catalog AWSMarketplace \
+            --entity-id "${PRODUCT_ID}" \
+            --region "${AWS_REGION}" \
+            --output json > entity.json
+
+          # Every imageTag the poller knows about, whatever its state.
+          aws dynamodb scan \
+            --table-name "${TABLE_NAME}" \
+            --region "${AWS_REGION}" \
+            --projection-expression 'imageTag' \
+            --output json > tracked.json
+
+          jq -r '.Items[]?.imageTag.S // empty' tracked.json | sort -u > tracked.txt
+
+          # Public test-* versions, newest first, with their creation dates.
+          jq -r '
+            .Details
+            | fromjson
+            | .Versions[]
+            | select(.VersionTitle | startswith("test-"))
+            | select([.DeliveryOptions[]?.Visibility] | any(. == "Public"))
+            | [.VersionTitle, .CreationDate] | @tsv
+          ' entity.json > public_test_versions.tsv || true
+
+          ORPHANED=0
+          CUTOFF=$(( $(date -u +%s) - STALL_HOURS * 3600 ))
+          # Ignore ancient history; this is about recent releases going missing.
+          FLOOR=$(( $(date -u +%s) - 30 * 86400 ))
+
+          while IFS=$'\t' read -r TITLE CREATED; do
+            [ -z "${TITLE:-}" ] && continue
+
+            if grep -Fxq "${TITLE}" tracked.txt; then
+              continue
+            fi
+
+            CREATED_TS=$(date -u -d "${CREATED}" +%s 2>/dev/null || echo 0)
+            [ "${CREATED_TS}" -lt "${FLOOR}" ] && continue
+
+            if [ "${CREATED_TS}" -lt "${CUTOFF}" ]; then
+              AGE_HOURS=$(( ( $(date -u +%s) - CREATED_TS ) / 3600 ))
+              echo "❌ ${TITLE}: published ${AGE_HOURS}h ago, still Public, and the poller never tracked it"
+              ORPHANED=$((ORPHANED + 1))
+            fi
+          done < public_test_versions.tsv
+
+          if [ "${ORPHANED}" -eq 0 ]; then
+            echo "✅ Every recent public test version is tracked."
+          fi
+
+          echo "ORPHANED=${ORPHANED}" >> "$GITHUB_ENV"
+
+      - name: Report
+        run: |
+          set -euo pipefail
+
           {
             echo "## Marketplace release watchdog"
             echo ""
-            echo "Awaiting release: ${COUNT}. Stalled beyond ${STALL_HOURS}h: ${STALLED}."
+            echo "Awaiting release: ${AWAITING}. Stalled beyond ${STALL_HOURS}h: ${STALLED}."
+            echo "Published but never tracked by the poller: ${ORPHANED}."
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${ORPHANED}" -gt 0 ]; then
+            {
+              echo ""
+              echo "A test version reached the listing but the poller never adopted it."
+              echo "Likely the poller was down or wedged for longer than its LOOKBACK_DAYS"
+              echo "window, after which the version falls out of its scan for good."
+              echo "Validation for these has to be dispatched by hand."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
           if [ "${STALLED}" -gt 0 ]; then
             {
@@ -131,7 +216,13 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
 
             echo "::error::${STALLED} marketplace release(s) stalled for more than ${STALL_HOURS}h."
+          fi
+
+          if [ "${STALLED}" -gt 0 ] || [ "${ORPHANED}" -gt 0 ]; then
+            if [ "${ORPHANED}" -gt 0 ]; then
+              echo "::error::${ORPHANED} published test version(s) were never picked up by the poller."
+            fi
             exit 1
           fi
 
-          echo "✅ Everything waiting is still inside the expected window."
+          echo "✅ Everything waiting is still inside the expected window, and every recent test version is tracked."

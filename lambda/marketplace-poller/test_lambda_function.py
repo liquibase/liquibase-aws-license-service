@@ -79,6 +79,8 @@ class FindRestrictionChangesetTest(unittest.TestCase):
         patcher = patch.object(lf, 'marketplace_client', self.client)
         patcher.start()
         self.addCleanup(patcher.stop)
+        lf.reset_invocation_cache()
+        self.addCleanup(lf.reset_invocation_cache)
 
     def test_matches_restrict_delivery_options_by_option_id(self):
         """The regression test: the real RestrictDeliveryOptions payload is found."""
@@ -156,9 +158,12 @@ class FindRestrictionChangesetTest(unittest.TestCase):
         self.assertIsNone(lf.find_restriction_changeset('test-9.9.9'))
         self.client.describe_change_set.assert_not_called()
 
-    def test_survives_describe_entity_failure(self):
-        """A DescribeEntity denial must not raise; the caller keeps waiting instead."""
-        self.client.describe_entity.side_effect = Exception('AccessDeniedException')
+    def test_survives_non_auth_describe_entity_failure(self):
+        """A transient DescribeEntity failure degrades to "keep waiting".
+
+        Authorisation failures deliberately do not: see AccessDeniedTest.
+        """
+        self.client.describe_entity.side_effect = Exception('boom')
 
         self.assertIsNone(lf.find_restriction_changeset(TEST_TAG))
 
@@ -172,6 +177,8 @@ class PaginationTest(unittest.TestCase):
         patcher = patch.object(lf, 'marketplace_client', self.client)
         patcher.start()
         self.addCleanup(patcher.stop)
+        lf.reset_invocation_cache()
+        self.addCleanup(lf.reset_invocation_cache)
 
     def test_follows_next_token(self):
         self.client.list_change_sets.side_effect = [
@@ -230,6 +237,8 @@ class NewVersionScanTest(unittest.TestCase):
         patcher = patch.object(lf, 'marketplace_client', self.client)
         patcher.start()
         self.addCleanup(patcher.stop)
+        lf.reset_invocation_cache()
+        self.addCleanup(lf.reset_invocation_cache)
 
     def test_applies_lookback_window(self):
         """Without this bound, old released tags would be re-validated."""
@@ -371,21 +380,104 @@ class ProductionReleaseTest(unittest.TestCase):
         trigger.assert_not_called()
 
 
-class ContractWithRestrictScriptTest(unittest.TestCase):
-    """The mismatch that caused the incident, asserted directly."""
+class InvocationCacheTest(unittest.TestCase):
+    """Each lookup used to refetch everything, risking the 60s timeout."""
 
-    def test_restriction_change_type_matches_the_shell_script(self):
-        script = os.path.join(
-            os.path.dirname(__file__), '..', '..', '.github', 'utils', 'restrict-aws-mp-listing.sh'
+    def setUp(self):
+        self.client = MagicMock()
+        self.client.describe_entity.return_value = ENTITY
+        self.client.list_change_sets.return_value = {
+            'ChangeSetSummaryList': [summary('bf4hk6bw552h3yw9nbvtmte87')]
+        }
+        self.client.describe_change_set.return_value = RESTRICTION_DETAIL
+        patcher = patch.object(lf, 'marketplace_client', self.client)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        lf.reset_invocation_cache()
+        self.addCleanup(lf.reset_invocation_cache)
+
+    def test_repeated_lookups_hit_the_api_once(self):
+        for _ in range(5):
+            lf.find_restriction_changeset(TEST_TAG)
+
+        self.assertEqual(self.client.describe_entity.call_count, 1)
+        self.assertEqual(self.client.list_change_sets.call_count, 1)
+        self.assertEqual(self.client.describe_change_set.call_count, 1)
+
+    def test_cache_does_not_survive_into_the_next_invocation(self):
+        """Lambda reuses containers; a stale listing would report a missing restriction."""
+        lf.find_restriction_changeset(TEST_TAG)
+        self.assertEqual(self.client.describe_entity.call_count, 1)
+
+        with patch.object(lf, 'process_new_versions', return_value=(0, 0)), \
+             patch.object(lf, 'release_validated_versions', return_value=0):
+            lf.lambda_handler({}, None)
+
+        lf.find_restriction_changeset(TEST_TAG)
+        self.assertEqual(
+            self.client.describe_entity.call_count, 2,
+            "lambda_handler must clear the cache so a new invocation re-reads the listing",
         )
 
-        with open(script) as handle:
+
+class AccessDeniedTest(unittest.TestCase):
+    """An IAM gap must not look like a healthy pipeline waiting."""
+
+    def setUp(self):
+        self.client = MagicMock()
+        patcher = patch.object(lf, 'marketplace_client', self.client)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        lf.reset_invocation_cache()
+        self.addCleanup(lf.reset_invocation_cache)
+
+    def test_describe_entity_denial_raises_rather_than_waiting_quietly(self):
+        from botocore.exceptions import ClientError
+
+        self.client.describe_entity.side_effect = ClientError(
+            {'Error': {'Code': 'AccessDeniedException', 'Message': 'nope'}}, 'DescribeEntity'
+        )
+
+        with self.assertRaises(ClientError):
+            lf.find_restriction_changeset(TEST_TAG)
+
+    def test_other_client_errors_still_degrade_gracefully(self):
+        from botocore.exceptions import ClientError
+
+        self.client.describe_entity.side_effect = ClientError(
+            {'Error': {'Code': 'ThrottlingException', 'Message': 'slow down'}}, 'DescribeEntity'
+        )
+
+        self.assertIsNone(lf.find_restriction_changeset(TEST_TAG))
+
+
+class ContractWithRepoTest(unittest.TestCase):
+    """The couplings that are invisible at review time, asserted directly."""
+
+    @staticmethod
+    def repo_file(*parts):
+        return os.path.join(os.path.dirname(__file__), '..', '..', *parts)
+
+    def test_restriction_change_type_matches_the_shell_script(self):
+        with open(self.repo_file('.github', 'utils', 'restrict-aws-mp-listing.sh')) as handle:
             body = handle.read()
 
         self.assertIn(
             f'"ChangeType": "{lf.RESTRICTION_CHANGE_TYPE}"',
             body,
             "the change type this Lambda matches must be the one restrict-aws-mp-listing.sh submits",
+        )
+
+    def test_auto_trigger_still_generates_a_selectable_tag(self):
+        """If the generated tag stops matching TEST_TAG_PREFIX, the poller silently
+        ignores every future release. Nothing else in CI would notice."""
+        with open(self.repo_file('.github', 'workflows', 'auto-trigger-marketplace-deployment.yml')) as handle:
+            body = handle.read()
+
+        self.assertIn(
+            f'TEST_VERSION="{lf.TEST_TAG_PREFIX}',
+            body,
+            "auto-trigger must generate a tag starting with the prefix the poller selects on",
         )
 
 

@@ -30,6 +30,7 @@ from datetime import datetime, timedelta, timezone
 
 import boto3
 import urllib3
+from botocore.exceptions import ClientError
 
 CATALOG = 'AWSMarketplace'
 REGION = 'us-east-1'
@@ -71,6 +72,29 @@ LOOKBACK_DAYS = int(os.environ.get('LOOKBACK_DAYS', '7'))
 MAX_PAGES = int(os.environ.get('MAX_PAGES', '10'))
 PAGE_SIZE = 20
 MAX_DESCRIBES = int(os.environ.get('MAX_DESCRIBES', '40'))
+
+
+# Per-invocation memo. The marketplace view does not change underneath a single
+# run, and every completed test used to re-describe the product entity and
+# re-paginate the whole change set list for itself. Three stalled tests meant
+# well over a hundred API calls against a 60-second timeout, so the function got
+# slower exactly when something was already wrong.
+#
+# Lambda reuses execution contexts between invocations, so this MUST be cleared
+# at the start of each one or a later run reads a stale listing and concludes a
+# restriction is missing when it is not.
+_invocation_cache = {}
+
+
+def reset_invocation_cache():
+    """Drop everything memoised for the previous invocation."""
+    _invocation_cache.clear()
+
+
+def is_access_denied(error):
+    """True if a botocore error is an authorisation failure."""
+    code = error.response.get('Error', {}).get('Code', '')
+    return 'AccessDenied' in code or code in ('UnauthorizedException', 'AccessDeniedException')
 
 
 def get_github_token():
@@ -247,21 +271,49 @@ def iter_change_sets(status=None, since=None):
         kwargs['NextToken'] = token
 
 
+def get_product_versions():
+    """Return the listing's versions, describing the product at most once per run.
+
+    Requires aws-marketplace:DescribeEntity. An authorisation failure here is
+    raised rather than swallowed: without it every restriction lookup answers
+    "not restricted yet", which is indistinguishable from a healthy pipeline
+    waiting and is precisely how the original defect stayed invisible for 30
+    hours. Better to fail the invocation and show up in the error metric.
+    """
+    if 'versions' in _invocation_cache:
+        return _invocation_cache['versions']
+
+    try:
+        response = marketplace_client.describe_entity(Catalog=CATALOG, EntityId=PRODUCT_ID)
+        details = json.loads(response.get('Details') or '{}')
+    except ClientError as e:
+        if is_access_denied(e):
+            print(
+                "❌ Denied aws-marketplace:DescribeEntity on "
+                f"{PRODUCT_ID}. Restriction matching cannot work without it and "
+                "no release will ever be triggered. Failing loudly instead of "
+                "waiting silently."
+            )
+            raise
+        print(f"Error describing product entity {PRODUCT_ID}: {str(e)}")
+        return []
+    except Exception as e:
+        print(f"Error describing product entity {PRODUCT_ID}: {str(e)}")
+        return []
+
+    versions = details.get('Versions', [])
+    _invocation_cache['versions'] = versions
+    return versions
+
+
 def get_delivery_option_ids(version_title):
     """Return the delivery option ids belonging to a listing version title.
 
     A RestrictDeliveryOptions change set names only the delivery option ids it
     withdrew, so this mapping is the only way to tie a restriction back to the
-    version it restricted. Requires aws-marketplace:DescribeEntity.
+    version it restricted.
     """
-    try:
-        response = marketplace_client.describe_entity(Catalog=CATALOG, EntityId=PRODUCT_ID)
-        details = json.loads(response.get('Details') or '{}')
-    except Exception as e:
-        print(f"Error describing product entity {PRODUCT_ID}: {str(e)}")
-        return set()
-
-    for version in details.get('Versions', []):
+    for version in get_product_versions():
         if version.get('VersionTitle') == version_title:
             return {
                 option['Id']
@@ -271,6 +323,25 @@ def get_delivery_option_ids(version_title):
 
     print(f"Version {version_title} not present on product {PRODUCT_ID}")
     return set()
+
+
+def get_recent_change_sets():
+    """Materialise the change set list once per invocation, newest first."""
+    if 'change_sets' not in _invocation_cache:
+        _invocation_cache['change_sets'] = list(iter_change_sets())
+    return _invocation_cache['change_sets']
+
+
+def describe_change_set_cached(changeset_id):
+    """describe_change_set memoised for the invocation, since lookups overlap."""
+    described = _invocation_cache.setdefault('described', {})
+
+    if changeset_id not in described:
+        described[changeset_id] = marketplace_client.describe_change_set(
+            Catalog=CATALOG, ChangeSetId=changeset_id
+        )
+
+    return described[changeset_id]
 
 
 def find_restriction_changeset(image_tag):
@@ -287,7 +358,7 @@ def find_restriction_changeset(image_tag):
 
     described = 0
 
-    for summary in iter_change_sets():
+    for summary in get_recent_change_sets():
         changeset_id = summary.get('ChangeSetId')
 
         if described >= MAX_DESCRIBES:
@@ -298,7 +369,7 @@ def find_restriction_changeset(image_tag):
             return None
 
         try:
-            detail = marketplace_client.describe_change_set(Catalog=CATALOG, ChangeSetId=changeset_id)
+            detail = describe_change_set_cached(changeset_id)
         except Exception as e:
             print(f"Error checking change set {changeset_id}: {str(e)}")
             continue
@@ -344,7 +415,7 @@ def process_new_versions():
         print(f"Processing new SUCCEEDED change set: {changeset_id}")
 
         try:
-            detail = marketplace_client.describe_change_set(Catalog=CATALOG, ChangeSetId=changeset_id)
+            detail = describe_change_set_cached(changeset_id)
         except Exception as e:
             print(f"Error describing change set {changeset_id}: {str(e)}")
             continue
@@ -433,6 +504,10 @@ def release_validated_versions():
 
 def lambda_handler(event, context):
     print("Starting marketplace change set polling...")
+
+    # Execution contexts are reused between invocations. Without this the run
+    # would answer from the previous run's view of the listing.
+    reset_invocation_cache()
 
     try:
         processed_count, triggered_test_count = process_new_versions()
