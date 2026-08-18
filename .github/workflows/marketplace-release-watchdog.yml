@@ -1,0 +1,137 @@
+name: Marketplace Release Watchdog
+
+# Fails loudly when a marketplace release is stuck part-way.
+#
+# The 5.2.2 release stalled between validation and publication and nothing said
+# so. The polling Lambda logged the same waiting line every 15 minutes for over
+# 30 hours; the pipeline looked idle rather than broken, and it was only noticed
+# because someone went looking. Nothing in this system distinguishes "no release
+# in progress" from "a release wedged".
+#
+# This is that distinction. A tracked validation that passed should reach
+# production within roughly an hour: the test image restriction takes about 15
+# minutes, the poller notices within 15, and the production submission is
+# minutes. Anything still sitting in testStatus=completed hours later is stuck.
+#
+# Failing the run is the alert. That matches how the other scheduled workflows in
+# this repository surface problems and needs no new webhook. Add a Slack step if
+# a louder channel is wanted.
+
+on:
+  schedule:
+    - cron: '25 */2 * * *' # every two hours
+  workflow_dispatch:
+    inputs:
+      stall_hours:
+        description: 'Hours a completed test may wait for release before it counts as stalled'
+        required: false
+        default: '3'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marketplace-release-watchdog
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-east-1
+      TABLE_NAME: liquibase-secure-marketplace-changesets
+      STALL_HOURS: ${{ inputs.stall_hours || '3' }}
+    steps:
+      - name: Configure AWS credentials for vault access
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Get secrets from vault
+        id: vault-secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@2cb1a461cbd4865ac4299648312e4704c646cd53 # v3.0.1
+        with:
+          secret-ids: |
+            ,/vault/liquibase
+          parse-json-secrets: true
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
+          aws-region: us-east-1
+
+      - name: Look for stalled releases
+        run: |
+          set -euo pipefail
+
+          # testStatus=completed means validation passed and the release is
+          # waiting on the restriction to be confirmed. It is a transient state;
+          # anything lingering in it is the failure mode we are watching for.
+          aws dynamodb scan \
+            --table-name "${TABLE_NAME}" \
+            --region "${AWS_REGION}" \
+            --filter-expression 'testStatus = :s' \
+            --expression-attribute-values '{":s":{"S":"completed"}}' \
+            --output json > scan.json
+
+          COUNT=$(jq '.Items | length' scan.json)
+          echo "Tracked validations awaiting release: ${COUNT}"
+
+          if [ "${COUNT}" -eq 0 ]; then
+            echo "✅ Nothing waiting."
+            exit 0
+          fi
+
+          # createdDate is an ISO-8601 string written by the poller.
+          jq -r '.Items[] | [(.imageTag.S // "unknown"), (.changeSetId.S // "unknown"), (.createdDate.S // "unknown")] | @tsv' scan.json > waiting.tsv
+
+          STALLED=0
+          CUTOFF=$(( $(date -u +%s) - STALL_HOURS * 3600 ))
+
+          while IFS=$'\t' read -r TAG CHANGESET CREATED; do
+            CREATED_TS=$(date -u -d "${CREATED}" +%s 2>/dev/null || echo 0)
+
+            if [ "${CREATED_TS}" -eq 0 ]; then
+              echo "⚠️  ${TAG} (${CHANGESET}): unparseable createdDate '${CREATED}', treating as stalled"
+              STALLED=$((STALLED + 1))
+              continue
+            fi
+
+            AGE_HOURS=$(( ( $(date -u +%s) - CREATED_TS ) / 3600 ))
+
+            if [ "${CREATED_TS}" -lt "${CUTOFF}" ]; then
+              echo "❌ ${TAG} (${CHANGESET}): waiting ${AGE_HOURS}h for production release"
+              STALLED=$((STALLED + 1))
+            else
+              echo "⏳ ${TAG} (${CHANGESET}): waiting ${AGE_HOURS}h, still inside the ${STALL_HOURS}h window"
+            fi
+          done < waiting.tsv
+
+          {
+            echo "## Marketplace release watchdog"
+            echo ""
+            echo "Awaiting release: ${COUNT}. Stalled beyond ${STALL_HOURS}h: ${STALLED}."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${STALLED}" -gt 0 ]; then
+            {
+              echo ""
+              echo "A validated test image has not reached production release. Usual causes:"
+              echo ""
+              echo "* the poller cannot match the restriction change set, so the release never triggers"
+              echo "* the restriction change set failed on the marketplace side"
+              echo "* the production dispatch failed and nothing retried"
+              echo ""
+              echo "Check the PollMarketplaceChangeSetStatus logs and the change sets on the listing."
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            echo "::error::${STALLED} marketplace release(s) stalled for more than ${STALL_HOURS}h."
+            exit 1
+          fi
+
+          echo "✅ Everything waiting is still inside the expected window."
