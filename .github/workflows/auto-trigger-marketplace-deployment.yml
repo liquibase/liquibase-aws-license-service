@@ -141,9 +141,18 @@ jobs:
         if: steps.version_changed.outputs.changed == 'true' && steps.verify_match.outputs.match == 'true'
         id: test_version
         run: |
-          # Use the liquibase-secure version for the test tag
+          # Use the liquibase-secure version for the test tag, plus the run number
+          # so each attempt gets a tag of its own.
+          #
+          # The tag used to be exactly test-<version>. Two things make that a
+          # one-shot: ECR tags are immutable, so a rebuild cannot reuse the tag,
+          # and AWS Marketplace version titles are permanent and cannot be
+          # deleted, only restricted. So any attempt that failed part-way left
+          # that version permanently unreleasable and recovery meant inventing a
+          # tag by hand. That is how the listing accumulated its devopstest-*
+          # entries. Keep the test- prefix: the polling Lambda selects on it.
           LIQUIBASE_SECURE_VERSION="${{ steps.version_changed.outputs.new_version }}"
-          TEST_VERSION="test-${LIQUIBASE_SECURE_VERSION}"
+          TEST_VERSION="test-${LIQUIBASE_SECURE_VERSION}-${{ github.run_number }}"
           echo "Generated test version tag: $TEST_VERSION"
           echo "tag=$TEST_VERSION" >> $GITHUB_OUTPUT
 
