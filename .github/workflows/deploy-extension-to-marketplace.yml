@@ -54,18 +54,37 @@ jobs:
           echo "Liquibase Secure version: $DOCKERFILE_LIQUIBASE_SECURE_VERSION"
           echo "dockerfile_liquibase_secure_version=$DOCKERFILE_LIQUIBASE_SECURE_VERSION" >> $GITHUB_OUTPUT
 
+      # The two versions are read from step outputs, NOT from bare shell variables.
+      # Writing to $GITHUB_OUTPUT does not export a value into a later step's
+      # environment, so the previous form compared two unset variables: "" == ""
+      # was always true and this gate could never fail. It let a run whose
+      # Dockerfile and pom disagreed proceed to submit a marketplace version.
       - name: Check if versions match
         id: check_versions
+        env:
+          POM_VERSION: ${{ steps.pom_liquibase_secure_version.outputs.pom_liquibase_secure_version }}
+          DOCKERFILE_VERSION: ${{ steps.dockerfile_liquibase_secure_version.outputs.dockerfile_liquibase_secure_version }}
         run: |
-          if [ "$POM_LIQUIBASE_SECURE_VERSION" == "$DOCKERFILE_LIQUIBASE_SECURE_VERSION" ]; then
-            echo "versions_match=true" >> $GITHUB_OUTPUT
-          else
-            echo "versions_match=false" >> $GITHUB_OUTPUT
+          echo "pom.xml:    '${POM_VERSION}'"
+          echo "Dockerfile: '${DOCKERFILE_VERSION}'"
+
+          # An empty value means the grep above stopped matching, e.g. after a
+          # Dockerfile or pom restructure. Treat it as a failure rather than
+          # letting two empty strings compare equal.
+          if [ -z "$POM_VERSION" ] || [ -z "$DOCKERFILE_VERSION" ]; then
+            echo "versions_match=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Could not read the liquibase-secure version from pom.xml ('${POM_VERSION}') and/or Dockerfile ('${DOCKERFILE_VERSION}'). Refusing to submit a marketplace version."
+            exit 1
           fi
 
-      - name: Output version match result
-        run: |
-          echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
+          if [ "$POM_VERSION" != "$DOCKERFILE_VERSION" ]; then
+            echo "versions_match=false" >> "$GITHUB_OUTPUT"
+            echo "::error::liquibase-secure version mismatch. Dockerfile: ${DOCKERFILE_VERSION}, pom.xml: ${POM_VERSION}. The image would be built from one version and labelled with another, so refusing to continue."
+            exit 1
+          fi
+
+          echo "versions_match=true" >> "$GITHUB_OUTPUT"
+          echo "✅ Versions match: ${POM_VERSION}"
 
   dry-run:
     # run this job for dry_run or when it is a repository_dispatch event
@@ -129,7 +148,12 @@ jobs:
           provenance: false # Disables the generation of provenance attestation
           # the tags can be either from input or test_tag
           tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag || env.test_tag }}
-        continue-on-error: true
+
+      # No continue-on-error here. It used to swallow a failed push and let the
+      # next step submit a marketplace version pointing at whatever image was
+      # already sitting in ECR under that tag. ECR tags are immutable, so a
+      # re-run of an existing tag fails the push and the submitted version would
+      # describe stale content while the job reported success.
 
       - name: Submit New Version Request for AWS MP Listing
         env:
@@ -208,7 +232,10 @@ jobs:
               platforms: linux/amd64,linux/arm64
               provenance: false # Disables the generation of provenance attestation
               tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
-            continue-on-error: true
+
+          # No continue-on-error here, for the same reason as the dry-run job.
+          # On this path the consequence is worse: a masked push failure would
+          # submit a PUBLIC version describing an image that was never pushed.
 
           - name: Submit Request for AWS MP Listing
             env:
