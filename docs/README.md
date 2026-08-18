@@ -6,8 +6,9 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Dependabot detects liquibase-secure version update          │
-│ (e.g., 5.0.1 → 5.0.2)                                       │
+│ Dependabot opens ONE PR bumping the Dockerfile              │
+│ (e.g., 5.2.1 → 5.2.2); liquibase-commercial is ignored in   │
+│ dependabot.yml and synced from the Dockerfile instead       │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ↓
@@ -26,7 +27,7 @@
 │ - Triggered by: push to main OR workflow_dispatch from      │
 │   dependabot-sync-and-merge.yml (with version input)        │
 │ - Detects version change via input or git diff fallback     │
-│ - Generates test tag: test-<liquibase-secure.version>       │
+│ - Generates test tag: test-<version>-<run_number>           │
 │ - Triggers deploy workflow                                  │
 └────────────────────────┬────────────────────────────────────┘
                          │
@@ -34,7 +35,7 @@
 ┌───────────────────────────────────────────────────────────────┐
 │ deploy-extension-to-marketplace.yml (dry_run=true)            │
 │ - Builds Docker image with new version                        │
-│ - Pushes to AWS Marketplace as test-<liquibase-secure.version>│
+│ - Pushes to AWS Marketplace as test-<version>-<run_number>    │
 │ - Creates change set via AWS API                              │
 └────────────────────────┬──────────────────────────────────────┘
                          │
@@ -55,9 +56,9 @@
                          ↓
 ┌───────────────────────────────────────────────────────────────────────────────┐
 │ Lambda: PollMarketplaceChangeSetStatus                                        │
-│ - Finds SUCCEEDED change set for test-<liquibase-secure.version>              │
+│ - Finds SUCCEEDED change sets for versions titled test-*                      │
 │ - Checks DynamoDB (not processed yet)                                         │
-│ - Extracts image tag: test-<liquibase-secure.version>                         │
+│ - Extracts the version title, e.g. test-5.2.2-482                            │
 │ - Calls GitHub API to trigger run-task-definitions.yml                        │
 │ - Records in DynamoDB to prevent duplicates                                   │
 └────────────────────────┬──────────────────────────────────────────────────────┘
@@ -66,7 +67,7 @@
 ┌─────────────────────────────────────────────────────────────┐
 │ run-task-definitions.yml                                    │
 │ - Runs ECS tasks on aws-mp-test-cluster                     |
-│ - Tests marketplace image: test-<liquibase-secure.version>  │
+│ - Tests marketplace image: test-<version>-<run_number>      │
 │ - If tests pass: Restricts test image from public access    │
 │ - Marks test as completed in DynamoDB                       │
 └────────────────────────┬────────────────────────────────────┘
@@ -82,7 +83,8 @@
 ┌───────────────────────────────────────────────────────────────────────────────┐
 │ Lambda: PollMarketplaceChangeSetStatus (next 15-min cycle)                    │
 │ - Scans DynamoDB for TestStatus=completed                                     │
-│ - Finds restriction change set for test image                                 │
+│ - Maps the version title to its delivery option ids (DescribeEntity)          │
+│ - Finds the RestrictDeliveryOptions change set withdrawing those ids          │
 │ - Verifies restriction Status=SUCCEEDED                                       │
 │ - Triggers deploy-extension-to-marketplace.yml (dry_run=false)                │
 │ - Updates DynamoDB: TestStatus=production_released                            │
@@ -109,13 +111,14 @@
 #### 1. `dependabot.yml` - Version Monitoring
 **What it does:** Automatically monitors for new liquibase-secure Docker images and Maven dependencies daily
 **Why needed:** Keeps the extension up-to-date with latest Liquibase Secure versions without manual checking
-**Creates:** Separate PRs for Dockerfile and pom.xml updates
+**Creates:** One PR per liquibase-secure release, bumping the Dockerfile
+**Note:** `com.liquibase:liquibase-commercial` is deliberately in the maven `ignore` list. It used to get its own PR, which merged in seconds while the Dockerfile PR waited, leaving `main` with a pom and Dockerfile on different versions. `liquibase-secure.version` is synced from the Dockerfile instead, so one PR is always self-consistent. `software.amazon.awssdk:*` is ignored for a different reason (see TECHOPS-622).
 
 #### 2. `dependabot-sync-and-merge.yml` - Version Synchronization
 **What it does:** For Dockerfile PRs, ensures pom.xml uses the same liquibase-secure version; auto-merges all Dependabot PRs; triggers marketplace deployment validation for liquibase-secure updates
 **Why needed:** Prevents version mismatches between build and runtime; eliminates manual PR merging; ensures deployment pipeline starts reliably
 **Important:** Version sync only runs when the Dockerfile is modified in the PR. Non-Dockerfile PRs (e.g., Maven dependency bumps) skip the sync to avoid regressing pom.xml from a stale branch.
-**Without this:** You'd need to manually sync versions, merge two separate PRs, and rely solely on push events to trigger deployment
+**Without this:** You'd need to manually sync versions and rely solely on push events to trigger deployment
 
 #### 3. `auto-trigger-marketplace-deployment.yml` - Smart Deployment Trigger
 **What it does:** Detects when liquibase-secure version changes in main branch and triggers test deployment
@@ -140,20 +143,35 @@
 - **Lambda (`PollMarketplaceChangeSetStatus`)**: Checks for SUCCEEDED change sets
 - **DynamoDB**: Tracks processed change sets to prevent duplicate test runs
 
+**Source:** [`lambda/marketplace-poller/`](../lambda/marketplace-poller/), deployed by `deploy-marketplace-poller-lambda.yml`. Do not edit the function in the console: Terraform owns its configuration and ignores the code, and this workflow owns the code.
+**Tag selection:** only version titles *starting with* `test-` are adopted. Titles published by hand such as `devopstest-5.2.2` contain `test-` but must stay manual, so the check is a prefix and not a substring.
+**Scan window:** `LOOKBACK_DAYS` (default 7) bounds how far back new versions are looked for, so the poller cannot re-validate long-released tags.
+
 #### 6. `run-task-definitions.yml` - Automated Testing
 **What it does:** Runs ECS tasks to test the approved marketplace image, then restricts it and marks as completed
 **Why needed:** Validates the image works correctly in AWS Marketplace environment
 **After completion:** Marks test as completed in DynamoDB, signaling Lambda to trigger production release
-**Important:** Only use for test images (containing `test-` prefix), never production versions
+**Important:** Only use for test images (titles starting with `test-`), never production versions
 
 #### 7. Lambda Production Release Trigger (Extended Polling)
 **What it does:** Polls for completed tests, verifies restriction succeeded, then triggers production release
 **Why needed:** Ensures restriction is complete before submitting production version (AWS doesn't allow simultaneous change sets)
 **Process:**
-- Scans DynamoDB for `TestStatus = completed`
-- Verifies test image restriction change set has `Status = SUCCEEDED`
+- Scans DynamoDB for `testStatus = completed`
+- Maps the test image's version title to its delivery option ids via `DescribeEntity` on the product
+- Finds the `RestrictDeliveryOptions` change set that withdrew those ids and checks `Status = SUCCEEDED`
 - Triggers `deploy-extension-to-marketplace.yml` with `dry_run=false`
 **Timing:** Triggers within 0-15 minutes after restriction completes
+
+**Why the id mapping:** a `RestrictDeliveryOptions` change set records only the delivery option ids it withdrew and carries no version title, so matching on a title cannot work. Getting this wrong is what stalled the 5.2.2 release for 30 hours: the lookup matched a change type that is never submitted and then compared a field that does not exist, so it always answered "not restricted yet" and the release never fired. `RESTRICTION_CHANGE_TYPE` in the Lambda must stay equal to the change type `.github/utils/restrict-aws-mp-listing.sh` submits; a test asserts it.
+
+#### 8. `deploy-marketplace-poller-lambda.yml` - Lambda Code Deployment
+**What it does:** Runs the poller's tests on a PR, and on merge to `main` packages and ships the code to `PollMarketplaceChangeSetStatus`
+**Why needed:** The Terraform for that function ignores `filename` and `source_code_hash` on the assumption that CI deploys the code, but no pipeline existed. The only copy of the code was the deployed zip, so it could not be diffed or reviewed, and a defect in it survived an earlier round of fixes to the same function.
+
+#### 9. `marketplace-release-watchdog.yml` - Stall Detection
+**What it does:** Every two hours, fails the run if a validated test image has been waiting more than 3 hours for its production release
+**Why needed:** Nothing distinguished "no release in progress" from "a release wedged". The 5.2.2 stall logged the same waiting line every 15 minutes for over 30 hours and was noticed only because someone went looking.
 
 ### Automation Timing (Complete End-to-End)
 
@@ -173,6 +191,24 @@
 | AWS Marketplace prod approval | ~30 min | AWS |
 | **Total (test to production)** | **~2 hours** | Fully automated |
 | **Total (PR merge to public)** | **~2 hours** | Fully automated |
+
+These are the intended timings. Until the restriction-matching fix, the production
+release leg never fired at all and every public version was dispatched by hand, so
+treat any release exceeding this envelope as broken rather than slow. The watchdog
+exists to make that call for you.
+
+### :mag: If a release does not appear
+
+1. `marketplace-release-watchdog.yml` fails when something has been waiting too long. Start with its most recent run.
+2. Check the poller's logs: log group `/aws/lambda/PollMarketplaceChangeSetStatus`, us-east-1, `LiquibaseAWSMP`. A repeating `No restriction change set found yet for <tag>` means the restriction lookup is not matching.
+3. Confirm the restriction change set actually succeeded:
+   ```bash
+   aws marketplace-catalog list-change-sets --catalog AWSMarketplace --region us-east-1 \
+     --filter-list '[{"Name":"EntityId","ValueList":["prod-l2panlvbozc5e"]}]' \
+     --sort '{"SortBy":"StartTime","SortOrder":"DESCENDING"}' --max-results 5
+   ```
+4. Do not trust a green deploy run on its own. Grep its log for `buildx failed`: a push to an existing immutable ECR tag fails the push, and the run used to report success anyway.
+5. AWS rejects simultaneous change sets on one product. If a submission failed, check whether another change set was in flight at the time.
 
 ### :hammer: (If required) Manually test liquibase commands with the Marketplace listing
 
