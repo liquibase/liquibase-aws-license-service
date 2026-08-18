@@ -21,8 +21,19 @@ updates:
     # Dependabot bump it ahead re-introduces the XXHASH3 checksums clash that
     # broke the test-5.2.0 image. See TECHOPS-622. Bump this manually, in
     # lockstep with the extension, only.
+    #
+    # liquibase-commercial is driven by the Dockerfile bump, not by Maven. A
+    # liquibase-secure release otherwise produces two independent PRs, and they
+    # do not land together: the Maven one has no Dockerfile change so it skips
+    # the sync step and merges in seconds, while the Dockerfile one carries the
+    # sync commits and can sit for hours. In between, main holds a pom and a
+    # Dockerfile on different versions, and a deploy launched in that window
+    # builds one version and labels it as another. Since dependabot-sync-and-merge.yml
+    # already syncs liquibase-secure.version in pom.xml from the Dockerfile, the
+    # Dockerfile PR is the single self-consistent unit. Let it be the only one.
     ignore:
       - dependency-name: "software.amazon.awssdk:*"
+      - dependency-name: "com.liquibase:liquibase-commercial"
 
   - package-ecosystem: "docker"
     directory: "/"
