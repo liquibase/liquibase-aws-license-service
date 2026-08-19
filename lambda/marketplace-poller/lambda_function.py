@@ -55,6 +55,11 @@ GITHUB_WORKFLOW_PROD = 'deploy-extension-to-marketplace.yml'
 # Change type the restrict step submits. Must track restrict-aws-mp-listing.sh.
 RESTRICTION_CHANGE_TYPE = 'RestrictDeliveryOptions'
 
+# Change sets end in one of these and never move again. Anything else is still
+# running. Treating a terminal failure as "in progress" is what turns a dead
+# release into an indefinite silent wait.
+TERMINAL_FAILURE_STATUSES = ('FAILED', 'CANCELLED')
+
 # Only versions whose title starts with this are part of the automated pipeline.
 # Deliberately a prefix, not a substring: manually published titles such as
 # devopstest-5.2.2 and devopstests-5.2.1 *contain* "test-", and a substring test
@@ -163,8 +168,15 @@ def update_test_status(changeset_id, test_status):
         print(f"Error updating test status: {str(e)}")
 
 
-def trigger_github_workflow(workflow, image_tag=None, dry_run=None):
-    """Dispatch a GitHub Actions workflow on main."""
+def trigger_github_workflow(workflow, image_tag=None, dry_run=None, validated_version=None):
+    """Dispatch a GitHub Actions workflow on main.
+
+    image_tag and validated_version are deliberately separate inputs.
+    deploy-extension-to-marketplace.yml documents image_tag as the ECR tag to
+    build (`qa-<version>`) and its dry-run job uses it that way, so overloading
+    it to mean "the version that passed validation" would break the manual
+    release path an operator reaches for when this poller is not working.
+    """
     github_token = get_github_token()
 
     url = f'https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/{workflow}/dispatches'
@@ -180,6 +192,8 @@ def trigger_github_workflow(workflow, image_tag=None, dry_run=None):
 
     if image_tag is not None:
         payload['inputs']['image_tag'] = image_tag
+    if validated_version is not None:
+        payload['inputs']['validated_version'] = validated_version
     if dry_run is not None:
         payload['inputs']['dry_run'] = str(dry_run).lower()
 
@@ -199,19 +213,19 @@ def trigger_github_workflow(workflow, image_tag=None, dry_run=None):
         return False
 
 
-def get_completed_tests():
-    """Return tracked items whose validation passed but which have not been released.
+def get_tests_by_status(status):
+    """Return tracked items sitting at a given testStatus.
 
     Follows LastEvaluatedKey. Scan returns at most 1 MB per call, and the filter
     is applied after that limit, so a single page can come back short or even
-    empty while later pages still hold completed tests. Reading only the first
+    empty while later pages still hold matching rows. Reading only the first
     page would leave those unreleased and, as ever here, silently: the table
     keeps 90 days of history, so this gets likelier as it grows.
     """
     items = []
     kwargs = {
         'FilterExpression': 'testStatus = :status',
-        'ExpressionAttributeValues': {':status': 'completed'},
+        'ExpressionAttributeValues': {':status': status},
     }
 
     try:
@@ -225,10 +239,15 @@ def get_completed_tests():
 
             kwargs['ExclusiveStartKey'] = last_key
     except Exception as e:
-        print(f"Error scanning for completed tests: {str(e)}")
+        print(f"Error scanning for tests with status {status}: {str(e)}")
         # Return what was read rather than dropping it: a partial list still
         # releases real work, and the next invocation retries the remainder.
         return items
+
+
+def get_completed_tests():
+    """Tracked items whose validation passed but which have not been released."""
+    return get_tests_by_status('completed')
 
 
 def change_details(change):
@@ -369,6 +388,17 @@ def find_restriction_changeset(image_tag):
 
     Returns {'ChangeSetId': ..., 'Status': ...} or None. The status is returned
     unfiltered so callers can distinguish "still restricting" from "restricted".
+
+    A SUCCEEDED restriction wins over any newer one. get_recent_change_sets()
+    is newest-first, so returning the first id match would let a later FAILED
+    submission shadow an older successful restriction: re-running
+    run-task-definitions.yml against an already-validated image (the documented
+    manual recovery path) submits a second RestrictDeliveryOptions for the same
+    delivery option ids, the marketplace rejects it as a duplicate, and a
+    release that was genuinely ready would then wait forever while the log
+    claimed the restriction was still in progress. The whole window is scanned
+    and a success preferred; if there is none, the newest match is returned so
+    the caller can see and report the terminal status.
     """
     option_ids = get_delivery_option_ids(image_tag)
 
@@ -377,16 +407,17 @@ def find_restriction_changeset(image_tag):
         return None
 
     described = 0
+    newest_match = None
 
     for summary in get_recent_change_sets():
         changeset_id = summary.get('ChangeSetId')
 
         if described >= MAX_DESCRIBES:
             print(
-                f"⚠️  Examined {described} change sets without finding a restriction "
-                f"for {image_tag}; stopping short of the full history."
+                f"⚠️  Examined {described} change sets without finding a successful "
+                f"restriction for {image_tag}; stopping short of the full history."
             )
-            return None
+            break
 
         try:
             detail = describe_change_set_cached(changeset_id)
@@ -402,10 +433,27 @@ def find_restriction_changeset(image_tag):
 
             restricted_ids = set(change_details(change).get('DeliveryOptionIds', []))
 
-            if restricted_ids & option_ids:
-                return {'ChangeSetId': changeset_id, 'Status': summary.get('Status')}
+            if not restricted_ids & option_ids:
+                continue
 
-    return None
+            match = {'ChangeSetId': changeset_id, 'Status': summary.get('Status')}
+
+            # A success is conclusive: the version is restricted, whatever a
+            # later duplicate submission did.
+            if match['Status'] == 'SUCCEEDED':
+                if newest_match is not None:
+                    print(
+                        f"Preferring SUCCEEDED restriction {changeset_id} over newer "
+                        f"{newest_match['ChangeSetId']} ({newest_match['Status']})"
+                    )
+                return match
+
+            # Otherwise remember the newest and keep looking for a success
+            # further back.
+            if newest_match is None:
+                newest_match = match
+
+    return newest_match
 
 
 def extract_version_title(detail_response):
@@ -514,6 +562,19 @@ def release_validated_versions():
 
         print(f"Found restriction change set {restriction['ChangeSetId']} with status: {restriction['Status']}")
 
+        # FAILED and CANCELLED are terminal. Treating them as "still in
+        # progress" is how a dead release waits forever while the log says it
+        # is working, which is the exact failure this poller exists to remove.
+        # The row deliberately stays at testStatus=completed so
+        # marketplace-release-watchdog.yml keeps counting it as stalled and
+        # somebody is told.
+        if restriction['Status'] in TERMINAL_FAILURE_STATUSES:
+            print(
+                f"::error::Restriction {restriction['ChangeSetId']} for {image_tag} ended "
+                f"{restriction['Status']}. Not releasing; it needs a resubmit."
+            )
+            continue
+
         if restriction['Status'] != 'SUCCEEDED':
             print(f"⏳ Restriction still in progress (Status: {restriction['Status']}). Waiting...")
             continue
@@ -532,14 +593,64 @@ def release_validated_versions():
         # It is deliberately the bare version, not image_tag: the production
         # title is public and permanent, so it must read 5.2.2 and never
         # test-5.2.2-482.1.
-        if trigger_github_workflow(GITHUB_WORKFLOW_PROD, image_tag=version, dry_run=False):
-            update_test_status(changeset_id, 'production_released')
+        # production_dispatched, not production_released. A 204 says only that
+        # GitHub accepted the dispatch; the run can still fail at the Docker
+        # push or the validated-version gate. Recording it as released here
+        # would drop the row out of every subsequent scan, so a failed release
+        # would be invisible to this poller AND to the watchdog. The status is
+        # promoted to production_released only once the version is actually
+        # public on the listing (see confirm_dispatched_releases).
+        if trigger_github_workflow(GITHUB_WORKFLOW_PROD, validated_version=version, dry_run=False):
+            update_test_status(changeset_id, 'production_dispatched')
             triggered += 1
-            print(f"✅ Successfully triggered production release for version {version}")
+            print(f"✅ Successfully dispatched production release for version {version}")
         else:
-            print(f"❌ Failed to trigger production release for version {version}")
+            print(f"❌ Failed to dispatch production release for version {version}")
 
     return triggered
+
+
+def confirm_dispatched_releases():
+    """Promote a dispatched release to released once the version is public.
+
+    Closes the loop the dispatch cannot: the production workflow may fail after
+    GitHub has accepted it. Until the listing actually carries the version as
+    Public, the row stays at production_dispatched, where the watchdog can see
+    it. Returns the number of rows promoted.
+    """
+    confirmed = 0
+
+    dispatched = get_tests_by_status('production_dispatched')
+
+    if not dispatched:
+        return 0
+
+    print(f"\n=== Confirming {len(dispatched)} dispatched release(s) ===")
+
+    public_titles = {
+        version.get('VersionTitle')
+        for version in get_product_versions()
+        if any(
+            option.get('Visibility') == 'Public'
+            for option in version.get('DeliveryOptions', [])
+        )
+    }
+
+    for item in dispatched:
+        changeset_id = item['changeSetId']
+        version = released_version(item['imageTag'])
+
+        if version in public_titles:
+            update_test_status(changeset_id, 'production_released')
+            confirmed += 1
+            print(f"✅ Version {version} is public on the listing; marking released.")
+        else:
+            print(
+                f"⏳ Version {version} dispatched but not yet public on the listing. "
+                "Leaving it tracked so the watchdog can flag it if it never lands."
+            )
+
+    return confirmed
 
 
 def lambda_handler(event, context):
@@ -551,12 +662,16 @@ def lambda_handler(event, context):
 
     try:
         processed_count, triggered_test_count = process_new_versions()
+        # Confirm first: a release dispatched last cycle may have landed by now,
+        # and promoting it before the scan keeps the dispatched backlog honest.
+        confirmed_count = confirm_dispatched_releases()
         triggered_prod_count = release_validated_versions()
 
         result_message = (
             f"Polling complete. Processed: {processed_count}, "
             f"Triggered tests: {triggered_test_count}, "
-            f"Triggered production:{triggered_prod_count}"
+            f"Triggered production:{triggered_prod_count}, "
+            f"Confirmed released: {confirmed_count}"
         )
         print(result_message)
 
@@ -568,6 +683,7 @@ def lambda_handler(event, context):
                     'processed': processed_count,
                     'triggered_tests': triggered_test_count,
                     'triggered_production': triggered_prod_count,
+                    'confirmed_released': confirmed_count,
                 }
             ),
         }

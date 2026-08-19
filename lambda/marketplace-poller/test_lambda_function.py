@@ -12,6 +12,8 @@ Reference change sets (product prod-l2panlvbozc5e):
 import os
 import sys
 import unittest
+
+import yaml
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -358,8 +360,15 @@ class ProductionReleaseTest(unittest.TestCase):
         # The bare version, never the test tag: the production title is public
         # and permanent, and the workflow compares it against the Dockerfile to
         # refuse publishing something nobody validated.
-        trigger.assert_called_once_with(lf.GITHUB_WORKFLOW_PROD, image_tag='5.2.2', dry_run=False)
-        update.assert_called_once_with('cs1', 'production_released')
+        #
+        # It travels as validated_version, not image_tag: image_tag is the ECR
+        # tag to build, which is what the dry-run job and the input's own
+        # description mean by it.
+        trigger.assert_called_once_with(
+            lf.GITHUB_WORKFLOW_PROD, validated_version='5.2.2', dry_run=False
+        )
+        # Dispatched, not released. A 204 only says GitHub accepted the run.
+        update.assert_called_once_with('cs1', 'production_dispatched')
 
     @patch.object(lf, 'update_test_status')
     @patch.object(lf, 'trigger_github_workflow', return_value=True)
@@ -371,7 +380,9 @@ class ProductionReleaseTest(unittest.TestCase):
         with patch.object(lf, 'find_restriction_changeset', return_value={'ChangeSetId': 'r', 'Status': 'SUCCEEDED'}):
             lf.release_validated_versions()
 
-        trigger.assert_called_once_with(lf.GITHUB_WORKFLOW_PROD, image_tag='5.2.2', dry_run=False)
+        trigger.assert_called_once_with(
+            lf.GITHUB_WORKFLOW_PROD, validated_version='5.2.2', dry_run=False
+        )
 
     @patch.object(lf, 'trigger_github_workflow')
     @patch.object(lf, 'get_completed_tests')
@@ -393,6 +404,128 @@ class ProductionReleaseTest(unittest.TestCase):
             self.assertEqual(lf.release_validated_versions(), 0)
 
         trigger.assert_not_called()
+
+
+    @patch.object(lf, 'update_test_status')
+    @patch.object(lf, 'trigger_github_workflow')
+    @patch.object(lf, 'get_completed_tests')
+    def test_does_not_release_on_a_terminal_failed_restriction(self, completed, trigger, update):
+        """FAILED is terminal: waiting on it is an indefinite silent stall."""
+        completed.return_value = [{'changeSetId': 'cs1', 'imageTag': TEST_TAG}]
+
+        with patch.object(lf, 'find_restriction_changeset', return_value={'ChangeSetId': 'r', 'Status': 'FAILED'}):
+            self.assertEqual(lf.release_validated_versions(), 0)
+
+        trigger.assert_not_called()
+        # The row stays at completed so the watchdog still counts it as stalled.
+        update.assert_not_called()
+
+    @patch.object(lf, 'update_test_status')
+    @patch.object(lf, 'trigger_github_workflow')
+    @patch.object(lf, 'get_completed_tests')
+    def test_does_not_release_on_a_cancelled_restriction(self, completed, trigger, update):
+        completed.return_value = [{'changeSetId': 'cs1', 'imageTag': TEST_TAG}]
+
+        with patch.object(lf, 'find_restriction_changeset', return_value={'ChangeSetId': 'r', 'Status': 'CANCELLED'}):
+            self.assertEqual(lf.release_validated_versions(), 0)
+
+        trigger.assert_not_called()
+        update.assert_not_called()
+
+
+class RestrictionPreferenceTest(unittest.TestCase):
+    """A newer duplicate submission must not bury an older successful one."""
+
+    def setUp(self):
+        lf.reset_invocation_cache()
+
+    def _listing(self):
+        return [{'VersionTitle': TEST_TAG, 'DeliveryOptions': [{'Id': 'opt-1'}]}]
+
+    def test_succeeded_wins_over_a_newer_failed_duplicate(self):
+        """Re-running validation resubmits the restriction; the marketplace
+        rejects the duplicate, and that FAILED change set is newer."""
+        change_sets = [
+            {'ChangeSetId': 'newer-failed', 'Status': 'FAILED'},
+            {'ChangeSetId': 'older-succeeded', 'Status': 'SUCCEEDED'},
+        ]
+        described = {
+            cs['ChangeSetId']: {
+                'ChangeSet': [
+                    {
+                        'ChangeType': 'RestrictDeliveryOptions',
+                        'DetailsDocument': {'DeliveryOptionIds': ['opt-1']},
+                    }
+                ]
+            }
+            for cs in change_sets
+        }
+
+        with patch.object(lf, 'get_product_versions', return_value=self._listing()), \
+             patch.object(lf, 'get_recent_change_sets', return_value=change_sets), \
+             patch.object(lf, 'describe_change_set_cached', side_effect=lambda i: described[i]):
+            result = lf.find_restriction_changeset(TEST_TAG)
+
+        self.assertEqual(result, {'ChangeSetId': 'older-succeeded', 'Status': 'SUCCEEDED'})
+
+    def test_reports_the_newest_when_none_succeeded(self):
+        """With no success anywhere, the caller must still see a terminal status."""
+        change_sets = [{'ChangeSetId': 'only-failed', 'Status': 'FAILED'}]
+        described = {
+            'only-failed': {
+                'ChangeSet': [
+                    {
+                        'ChangeType': 'RestrictDeliveryOptions',
+                        'DetailsDocument': {'DeliveryOptionIds': ['opt-1']},
+                    }
+                ]
+            }
+        }
+
+        with patch.object(lf, 'get_product_versions', return_value=self._listing()), \
+             patch.object(lf, 'get_recent_change_sets', return_value=change_sets), \
+             patch.object(lf, 'describe_change_set_cached', side_effect=lambda i: described[i]):
+            result = lf.find_restriction_changeset(TEST_TAG)
+
+        self.assertEqual(result, {'ChangeSetId': 'only-failed', 'Status': 'FAILED'})
+
+
+class ConfirmDispatchedReleaseTest(unittest.TestCase):
+    """A 204 is an accepted dispatch, not a published version."""
+
+    @patch.object(lf, 'update_test_status')
+    @patch.object(lf, 'get_tests_by_status')
+    def test_promotes_once_the_version_is_public(self, by_status, update):
+        by_status.return_value = [{'changeSetId': 'cs1', 'imageTag': 'test-5.2.2-482.1'}]
+        listing = [{'VersionTitle': '5.2.2', 'DeliveryOptions': [{'Visibility': 'Public'}]}]
+
+        with patch.object(lf, 'get_product_versions', return_value=listing):
+            self.assertEqual(lf.confirm_dispatched_releases(), 1)
+
+        update.assert_called_once_with('cs1', 'production_released')
+
+    @patch.object(lf, 'update_test_status')
+    @patch.object(lf, 'get_tests_by_status')
+    def test_leaves_it_dispatched_when_the_release_never_landed(self, by_status, update):
+        """The production run can fail after GitHub accepts the dispatch."""
+        by_status.return_value = [{'changeSetId': 'cs1', 'imageTag': 'test-5.2.2-482.1'}]
+        listing = [{'VersionTitle': '5.2.1', 'DeliveryOptions': [{'Visibility': 'Public'}]}]
+
+        with patch.object(lf, 'get_product_versions', return_value=listing):
+            self.assertEqual(lf.confirm_dispatched_releases(), 0)
+
+        update.assert_not_called()
+
+    @patch.object(lf, 'update_test_status')
+    @patch.object(lf, 'get_tests_by_status')
+    def test_a_restricted_version_does_not_count_as_released(self, by_status, update):
+        by_status.return_value = [{'changeSetId': 'cs1', 'imageTag': 'test-5.2.2-482.1'}]
+        listing = [{'VersionTitle': '5.2.2', 'DeliveryOptions': [{'Visibility': 'Restricted'}]}]
+
+        with patch.object(lf, 'get_product_versions', return_value=listing):
+            self.assertEqual(lf.confirm_dispatched_releases(), 0)
+
+        update.assert_not_called()
 
 
 class InvocationCacheTest(unittest.TestCase):
@@ -543,6 +676,43 @@ class ContractWithRepoTest(unittest.TestCase):
             body,
             "auto-trigger must generate a tag starting with the prefix the poller selects on",
         )
+
+    def test_deploy_workflow_accepts_the_input_the_poller_sends(self):
+        """The poller sends validated_version. A workflow_dispatch naming an
+        input the workflow does not declare is rejected outright, so the whole
+        production leg would go back to never firing, and it would fail exactly
+        where nobody looks. This is the same class of cross-file drift that
+        caused TECHOPS-1091: RestrictVersion vs RestrictDeliveryOptions.
+        """
+        with open(self.repo_file('.github', 'workflows', 'deploy-extension-to-marketplace.yml')) as handle:
+            workflow = yaml.safe_load(handle)
+
+        # PyYAML parses the bare `on:` key as the boolean True.
+        triggers = workflow.get('on', workflow.get(True, {}))
+        declared = set(triggers['workflow_dispatch']['inputs'])
+
+        self.assertIn('validated_version', declared)
+        self.assertIn('dry_run', declared)
+        # image_tag must survive too: the dry-run job and the manual release
+        # path both still use it as the ECR tag.
+        self.assertIn('image_tag', declared)
+
+    def test_poller_sends_the_version_as_validated_version_not_image_tag(self):
+        """image_tag means "ECR tag to build" everywhere else in that workflow."""
+        sent = {}
+
+        def capture(workflow, **kwargs):
+            sent.update(kwargs)
+            return True
+
+        with patch.object(lf, 'get_completed_tests', return_value=[{'changeSetId': 'cs1', 'imageTag': TEST_TAG}]), \
+             patch.object(lf, 'find_restriction_changeset', return_value={'ChangeSetId': 'r', 'Status': 'SUCCEEDED'}), \
+             patch.object(lf, 'update_test_status'), \
+             patch.object(lf, 'trigger_github_workflow', side_effect=capture):
+            lf.release_validated_versions()
+
+        self.assertEqual(sent.get('validated_version'), '5.2.2')
+        self.assertNotIn('image_tag', sent)
 
 
 if __name__ == '__main__':

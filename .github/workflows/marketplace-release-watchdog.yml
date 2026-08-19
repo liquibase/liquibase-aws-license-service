@@ -49,6 +49,30 @@ jobs:
       PRODUCT_ID: prod-l2panlvbozc5e
       STALL_HOURS: ${{ inputs.stall_hours || '2' }}
     steps:
+      # STALL_HOURS reaches both scan steps as arithmetic. A non-numeric value
+      # aborts the step under `set -e`, and a zero-padded one like "08" is read
+      # as octal and fails outright, so it is normalised and bounded once here
+      # rather than trusted twice below.
+      - name: Validate the stall threshold
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${STALL_HOURS}" =~ ^[0-9]+$ ]]; then
+            echo "::error::stall_hours must be a whole number of hours, got '${STALL_HOURS}'"
+            exit 1
+          fi
+
+          # 10# forces base 10 so a leading zero is not read as octal.
+          HOURS=$((10#${STALL_HOURS}))
+
+          if [ "${HOURS}" -lt 1 ] || [ "${HOURS}" -gt 168 ]; then
+            echo "::error::stall_hours must be between 1 and 168, got '${STALL_HOURS}'"
+            exit 1
+          fi
+
+          echo "STALL_HOURS=${HOURS}" >> "$GITHUB_ENV"
+          echo "Stall threshold: ${HOURS}h"
+
       - name: Configure AWS credentials for vault access
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
@@ -73,14 +97,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          # testStatus=completed means validation passed and the release is
-          # waiting on the restriction to be confirmed. It is a transient state;
-          # anything lingering in it is the failure mode we are watching for.
+          # Both states are transient, and anything lingering in either is the
+          # failure mode we are watching for:
+          #   completed             validation passed, waiting on the restriction
+          #   production_dispatched GitHub accepted the release run, but the
+          #                         version is not public on the listing yet
+          # The second exists because a 204 from the dispatch API is not a
+          # release: the run can still fail at the Docker push or the
+          # validated-version gate, and the poller deliberately does not promote
+          # the row until the listing proves otherwise.
           aws dynamodb scan \
             --table-name "${TABLE_NAME}" \
             --region "${AWS_REGION}" \
-            --filter-expression 'testStatus = :s' \
-            --expression-attribute-values '{":s":{"S":"completed"}}' \
+            --filter-expression 'testStatus IN (:completed, :dispatched)' \
+            --expression-attribute-values '{":completed":{"S":"completed"},":dispatched":{"S":"production_dispatched"}}' \
             --output json > scan.json
 
           COUNT=$(jq '.Items | length' scan.json)
@@ -88,6 +118,11 @@ jobs:
 
           if [ "${COUNT}" -eq 0 ]; then
             echo "✅ Nothing waiting."
+            # Export before exiting. The Report step runs `set -u`, so leaving
+            # these unset failed the job on the HEALTHY path: nothing waiting is
+            # the state this watchdog is in almost every run.
+            echo "AWAITING=0" >> "$GITHUB_ENV"
+            echo "STALLED=0" >> "$GITHUB_ENV"
             exit 0
           fi
 
@@ -97,12 +132,12 @@ jobs:
           # finishes, so a long validation would otherwise look stalled the
           # instant it completed. Fall back to createdDate for rows written
           # before testCompletedAt existed.
-          jq -r '.Items[] | [(.imageTag.S // "unknown"), (.changeSetId.S // "unknown"), (.testCompletedAt.S // .createdDate.S // "unknown")] | @tsv' scan.json > waiting.tsv
+          jq -r '.Items[] | [(.imageTag.S // "unknown"), (.changeSetId.S // "unknown"), (.testCompletedAt.S // .createdDate.S // "unknown"), (.testStatus.S // "unknown")] | @tsv' scan.json > waiting.tsv
 
           STALLED=0
           CUTOFF=$(( $(date -u +%s) - STALL_HOURS * 3600 ))
 
-          while IFS=$'\t' read -r TAG CHANGESET COMPLETED; do
+          while IFS=$'\t' read -r TAG CHANGESET COMPLETED STATUS; do
             CREATED_TS=$(date -u -d "${COMPLETED}" +%s 2>/dev/null || echo 0)
 
             if [ "${CREATED_TS}" -eq 0 ]; then
@@ -114,10 +149,10 @@ jobs:
             AGE_HOURS=$(( ( $(date -u +%s) - CREATED_TS ) / 3600 ))
 
             if [ "${CREATED_TS}" -lt "${CUTOFF}" ]; then
-              echo "❌ ${TAG} (${CHANGESET}): waiting ${AGE_HOURS}h for production release"
+              echo "❌ ${TAG} (${CHANGESET}, ${STATUS}): waiting ${AGE_HOURS}h for production release"
               STALLED=$((STALLED + 1))
             else
-              echo "⏳ ${TAG} (${CHANGESET}): waiting ${AGE_HOURS}h, still inside the ${STALL_HOURS}h window"
+              echo "⏳ ${TAG} (${CHANGESET}, ${STATUS}): waiting ${AGE_HOURS}h, still inside the ${STALL_HOURS}h window"
             fi
           done < waiting.tsv
 
@@ -160,7 +195,7 @@ jobs:
             | select(.VersionTitle | startswith("test-"))
             | select([.DeliveryOptions[]?.Visibility] | any(. == "Public"))
             | [.VersionTitle, .CreationDate] | @tsv
-          ' entity.json > public_test_versions.tsv || true
+          ' entity.json > public_test_versions.tsv
 
           ORPHANED=0
           CUTOFF=$(( $(date -u +%s) - STALL_HOURS * 3600 ))
@@ -174,7 +209,24 @@ jobs:
               continue
             fi
 
+            # An empty CreationDate must not be parsed. GNU date accepts "" and
+            # returns midnight TODAY (verified on coreutils 9.4), which sails
+            # past both the floor and the cutoff, so the version would be
+            # silently dropped instead of reported.
+            if [ -z "${CREATED:-}" ]; then
+              echo "⚠️  ${TITLE}: no CreationDate on the listing, treating as orphaned"
+              ORPHANED=$((ORPHANED + 1))
+              continue
+            fi
+
             CREATED_TS=$(date -u -d "${CREATED}" +%s 2>/dev/null || echo 0)
+
+            if [ "${CREATED_TS}" -eq 0 ]; then
+              echo "⚠️  ${TITLE}: unparseable CreationDate '${CREATED}', treating as orphaned"
+              ORPHANED=$((ORPHANED + 1))
+              continue
+            fi
+
             [ "${CREATED_TS}" -lt "${FLOOR}" ] && continue
 
             if [ "${CREATED_TS}" -lt "${CUTOFF}" ]; then
@@ -190,9 +242,17 @@ jobs:
 
           echo "ORPHANED=${ORPHANED}" >> "$GITHUB_ENV"
 
+      # always(), with defaults below: if a scan step fails before writing
+      # GITHUB_ENV the summary should still say what was known, rather than the
+      # watchdog going quiet at exactly the moment something is wrong.
       - name: Report
+        if: always()
         run: |
           set -euo pipefail
+
+          AWAITING="${AWAITING:-0}"
+          STALLED="${STALLED:-0}"
+          ORPHANED="${ORPHANED:-0}"
 
           {
             echo "## Marketplace release watchdog"

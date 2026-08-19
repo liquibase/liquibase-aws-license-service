@@ -22,6 +22,15 @@ on:
         description: Test Image tag for the ECR liquibase/liquibaseSecure. QA-use e.g `qa-<version>`
         required: true
         default: ''
+      # Deliberately separate from image_tag. image_tag is an ECR tag to build
+      # and the dry-run job uses it that way; this is a bare liquibase-secure
+      # version that already passed ECS validation. Overloading one input to
+      # mean both would make a manual production dispatch fail for anyone who
+      # filled image_tag in as its own description instructs.
+      validated_version:
+        description: 'Set by the marketplace poller: the liquibase-secure version that passed ECS validation. Leave empty to release whatever is on main.'
+        required: false
+        default: ''
       dry_run:
         description: 'Run this as a dry run.'
         required: false
@@ -228,11 +237,14 @@ jobs:
           # marketplace versions cannot be deleted, only restricted, so this
           # fails instead.
           #
-          # image_tag is empty for manual dispatches that intend "just release
-          # what is on main"; those skip the check rather than fail.
+          # validated_version is empty for manual dispatches that intend "just
+          # release what is on main"; those skip the check rather than fail. It
+          # is never image_tag: that input is the ECR tag to build, so reading
+          # it here would reject a hand-filled `qa-5.2.2` as an unvalidated
+          # version and block the manual release path entirely.
           - name: Verify the Dockerfile matches the validated version
             env:
-              VALIDATED_VERSION: "${{ inputs.image_tag }}"
+              VALIDATED_VERSION: "${{ inputs.validated_version }}"
               DOCKERFILE_VERSION: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
             run: |
               if [ -z "${VALIDATED_VERSION}" ]; then

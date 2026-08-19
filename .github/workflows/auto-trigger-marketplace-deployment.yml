@@ -71,6 +71,18 @@ jobs:
           # If new_version was passed via workflow_dispatch, use it directly
           # This avoids the fragile git diff approach when triggered by dependabot-sync-and-merge.yml
           if [ -n "$INPUT_VERSION" ]; then
+            # new_version becomes the marketplace test tag, and a marketplace
+            # version title is permanent. If the caller names a version this
+            # checkout does not actually contain, the image gets labelled with a
+            # version it is not built from: exactly the mislabelled test-5.2.2
+            # (built from a 5.2.1 base) that made 5.2.2 unreleasable. The caller
+            # dispatches after merging its bump, so disagreement here means main
+            # moved underneath it and the run must not proceed.
+            if [ "$INPUT_VERSION" != "$CURRENT_VERSION" ]; then
+              echo "::error::Dispatched with new_version '$INPUT_VERSION' but this checkout of pom.xml has '$CURRENT_VERSION'. Refusing to label an image with a version it was not built from."
+              exit 1
+            fi
+
             echo "✅ Version provided via workflow_dispatch input: $INPUT_VERSION"
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "new_version=$INPUT_VERSION" >> $GITHUB_OUTPUT
@@ -123,9 +135,11 @@ jobs:
       - name: Verify Dockerfile and pom.xml versions match
         if: steps.version_changed.outputs.changed == 'true'
         id: verify_match
+        env:
+          POM_VERSION_IN: ${{ steps.current_version.outputs.version }}
         run: |
           DOCKERFILE_VERSION=$(grep -E '^FROM liquibase/liquibase-secure:' Dockerfile | head -1 | cut -d':' -f2 | cut -d' ' -f1)
-          POM_VERSION="${{ steps.current_version.outputs.version }}"
+          POM_VERSION="${POM_VERSION_IN}"
 
           echo "Dockerfile version: $DOCKERFILE_VERSION"
           echo "pom.xml version: $POM_VERSION"
@@ -174,8 +188,11 @@ jobs:
         if: steps.version_changed.outputs.changed == 'true' && steps.verify_match.outputs.match == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Same reason as the Generate and Post summary steps: the tag is
+          # derived from new_version, which can come from the dispatch input.
+          TEST_TAG_IN: ${{ steps.test_version.outputs.tag }}
         run: |
-          TEST_TAG="${{ steps.test_version.outputs.tag }}"
+          TEST_TAG="${TEST_TAG_IN}"
           echo "🚀 Triggering deploy-extension-to-marketplace.yml (dry_run=true)"
           echo "   Test image tag: $TEST_TAG"
 
@@ -187,19 +204,30 @@ jobs:
           echo "✅ Workflow triggered successfully!"
           echo "Check the workflow run at: https://github.com/${{ github.repository }}/actions/workflows/deploy-extension-to-marketplace.yml"
 
+      # Every value here goes through env, not template expansion. new_version
+      # can originate from the workflow_dispatch input, and a `run:` block is a
+      # shell script: expanding it inline would execute whatever it contains.
+      # The Generate step above was already hardened this way; this step is the
+      # same sink and was missed.
       - name: Post summary
         if: always()
+        env:
+          CURRENT_VERSION: ${{ steps.current_version.outputs.version }}
+          CHANGED: ${{ steps.version_changed.outputs.changed }}
+          OLD_VERSION: ${{ steps.version_changed.outputs.old_version }}
+          NEW_VERSION: ${{ steps.version_changed.outputs.new_version }}
+          MATCH: ${{ steps.verify_match.outputs.match }}
         run: |
           echo "## Automation Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Current Version:** ${{ steps.current_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Current Version:** ${CURRENT_VERSION}" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ steps.version_changed.outputs.changed }}" == "true" ]; then
-            echo "**Previous Version:** ${{ steps.version_changed.outputs.old_version }}" >> $GITHUB_STEP_SUMMARY
-            echo "**New Version:** ${{ steps.version_changed.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${CHANGED}" == "true" ]; then
+            echo "**Previous Version:** ${OLD_VERSION}" >> $GITHUB_STEP_SUMMARY
+            echo "**New Version:** ${NEW_VERSION}" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
-            if [ "${{ steps.verify_match.outputs.match }}" == "true" ]; then
+            if [ "${MATCH}" == "true" ]; then
               echo "✅ **Status:** New version detected! Deployment workflow triggered in dry-run mode" >> $GITHUB_STEP_SUMMARY
             else
               echo "❌ **Status:** Version mismatch between Dockerfile and pom.xml" >> $GITHUB_STEP_SUMMARY

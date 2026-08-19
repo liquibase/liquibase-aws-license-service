@@ -27,7 +27,8 @@
 │ - Triggered by: push to main OR workflow_dispatch from      │
 │   dependabot-sync-and-merge.yml (with version input)        │
 │ - Detects version change via input or git diff fallback     │
-│ - Generates test tag: test-<version>-<run_number>           │
+│ - Generates test tag:                                       │
+│     test-<version>-<run_number>.<run_attempt>               │
 │ - Triggers deploy workflow                                  │
 └────────────────────────┬────────────────────────────────────┘
                          │
@@ -35,7 +36,8 @@
 ┌───────────────────────────────────────────────────────────────┐
 │ deploy-extension-to-marketplace.yml (dry_run=true)            │
 │ - Builds Docker image with new version                        │
-│ - Pushes to AWS Marketplace as test-<version>-<run_number>    │
+│ - Pushes to AWS Marketplace as                                │
+│     test-<version>-<run_number>.<run_attempt>                 │
 │ - Creates change set via AWS API                              │
 └────────────────────────┬──────────────────────────────────────┘
                          │
@@ -58,7 +60,7 @@
 │ Lambda: PollMarketplaceChangeSetStatus                                        │
 │ - Finds SUCCEEDED change sets for versions titled test-*                      │
 │ - Checks DynamoDB (not processed yet)                                         │
-│ - Extracts the version title, e.g. test-5.2.2-482                            │
+│ - Extracts the version title, e.g. test-5.2.2-482.1                          │
 │ - Calls GitHub API to trigger run-task-definitions.yml                        │
 │ - Records in DynamoDB to prevent duplicates                                   │
 └────────────────────────┬──────────────────────────────────────────────────────┘
@@ -67,7 +69,8 @@
 ┌─────────────────────────────────────────────────────────────┐
 │ run-task-definitions.yml                                    │
 │ - Runs ECS tasks on aws-mp-test-cluster                     |
-│ - Tests marketplace image: test-<version>-<run_number>      │
+│ - Tests marketplace image:                                  │
+│     test-<version>-<run_number>.<run_attempt>               │
 │ - If tests pass: Restricts test image from public access    │
 │ - Marks test as completed in DynamoDB                       │
 └────────────────────────┬────────────────────────────────────┘
@@ -85,9 +88,15 @@
 │ - Scans DynamoDB for TestStatus=completed                                     │
 │ - Maps the version title to its delivery option ids (DescribeEntity)          │
 │ - Finds the RestrictDeliveryOptions change set withdrawing those ids          │
-│ - Verifies restriction Status=SUCCEEDED                                       │
-│ - Triggers deploy-extension-to-marketplace.yml (dry_run=false)                │
-│ - Updates DynamoDB: TestStatus=production_released                            │
+│ - Verifies restriction Status=SUCCEEDED. FAILED and CANCELLED are terminal:   │
+│   it reports and stops rather than waiting on a change set that is done       │
+│ - Triggers deploy-extension-to-marketplace.yml with dry_run=false and         │
+│   validated_version=<version>, NOT image_tag: that input is the ECR tag to    │
+│   build, and the manual release path still uses it that way                   │
+│ - Updates DynamoDB: TestStatus=production_dispatched                          │
+│ - A later cycle promotes it to production_released, but only once the version │
+│   is actually Public on the listing. A dispatch GitHub accepted is not a      │
+│   release: the run can still fail at the push or the validated-version gate   │
 └────────────────────────┬──────────────────────────────────────────────────────┘
                          │
                          ↓
@@ -170,7 +179,7 @@
 **Why needed:** The Terraform for that function ignores `filename` and `source_code_hash` on the assumption that CI deploys the code, but no pipeline existed. The only copy of the code was the deployed zip, so it could not be diffed or reviewed, and a defect in it survived an earlier round of fixes to the same function.
 
 #### 9. `marketplace-release-watchdog.yml` - Stall Detection
-**What it does:** Every two hours, fails the run if a validated test image has been waiting more than 3 hours for its production release
+**What it does:** Every two hours, fails the run if a validated test image has been waiting more than `stall_hours` (default 2) for its production release
 **Why needed:** Nothing distinguished "no release in progress" from "a release wedged". The 5.2.2 stall logged the same waiting line every 15 minutes for over 30 hours and was noticed only because someone went looking.
 
 ### Automation Timing (Complete End-to-End)
