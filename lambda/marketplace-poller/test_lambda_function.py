@@ -502,6 +502,10 @@ class ConfirmDispatchedReleaseTest(unittest.TestCase):
         with patch.object(lf, 'get_product_versions', return_value=listing):
             self.assertEqual(lf.confirm_dispatched_releases(), 1)
 
+        # The literal is the contract with release_validated_versions. If either
+        # side changes it the loop silently stops promoting rows, and the tests
+        # would still pass without this assertion.
+        by_status.assert_called_once_with('production_dispatched')
         update.assert_called_once_with('cs1', 'production_released')
 
     @patch.object(lf, 'update_test_status')
@@ -521,6 +525,52 @@ class ConfirmDispatchedReleaseTest(unittest.TestCase):
     def test_a_restricted_version_does_not_count_as_released(self, by_status, update):
         by_status.return_value = [{'changeSetId': 'cs1', 'imageTag': 'test-5.2.2-482.1'}]
         listing = [{'VersionTitle': '5.2.2', 'DeliveryOptions': [{'Visibility': 'Restricted'}]}]
+
+        with patch.object(lf, 'get_product_versions', return_value=listing):
+            self.assertEqual(lf.confirm_dispatched_releases(), 0)
+
+        update.assert_not_called()
+
+
+    @patch.object(lf, 'update_test_status')
+    @patch.object(lf, 'get_tests_by_status')
+    def test_accepts_a_version_level_visibility(self, by_status, update):
+        """Some entity shapes carry Visibility on the version, not the option."""
+        by_status.return_value = [{'changeSetId': 'cs1', 'imageTag': 'test-5.2.2-482.1'}]
+        listing = [{'VersionTitle': '5.2.2', 'Visibility': 'Public', 'DeliveryOptions': [{'Id': 'x'}]}]
+
+        with patch.object(lf, 'get_product_versions', return_value=listing):
+            self.assertEqual(lf.confirm_dispatched_releases(), 1)
+
+        update.assert_called_once_with('cs1', 'production_released')
+
+    @patch.object(lf, 'update_test_status')
+    @patch.object(lf, 'get_tests_by_status')
+    def test_fails_loudly_when_no_version_reports_visibility(self, by_status, update):
+        """If the field is gone, every release would sit dispatched forever.
+
+        That is the indefinite silent wait this whole ticket is about, so the
+        shape is asserted rather than assumed.
+        """
+        by_status.return_value = [{'changeSetId': 'cs1', 'imageTag': 'test-5.2.2-482.1'}]
+        listing = [{'VersionTitle': '5.2.2', 'DeliveryOptions': [{'Id': 'opt-1'}]}]
+
+        with patch.object(lf, 'get_product_versions', return_value=listing):
+            self.assertEqual(lf.confirm_dispatched_releases(), 0)
+
+        update.assert_not_called()
+
+    @patch.object(lf, 'update_test_status')
+    @patch.object(lf, 'get_tests_by_status')
+    def test_never_confirms_from_product_level_visibility(self, by_status, update):
+        """The product is Public permanently; confirming on it would promote
+        every dispatched row and restore the false 'released' state."""
+        by_status.return_value = [{'changeSetId': 'cs1', 'imageTag': 'test-5.2.2-482.1'}]
+        # 5.2.2 is present but Restricted; only an older version is Public.
+        listing = [
+            {'VersionTitle': '5.2.2', 'DeliveryOptions': [{'Visibility': 'Restricted'}]},
+            {'VersionTitle': '5.2.1', 'DeliveryOptions': [{'Visibility': 'Public'}]},
+        ]
 
         with patch.object(lf, 'get_product_versions', return_value=listing):
             self.assertEqual(lf.confirm_dispatched_releases(), 0)

@@ -132,16 +132,48 @@ jobs:
           # finishes, so a long validation would otherwise look stalled the
           # instant it completed. Fall back to createdDate for rows written
           # before testCompletedAt existed.
-          jq -r '.Items[] | [(.imageTag.S // "unknown"), (.changeSetId.S // "unknown"), (.testCompletedAt.S // .createdDate.S // "unknown"), (.testStatus.S // "unknown")] | @tsv' scan.json > waiting.tsv
+          # Each state is measured from the moment it was ENTERED:
+          #   completed             -> testCompletedAt
+          #   production_dispatched -> productionTriggeredAt (set by the poller's
+          #                            update_test_status when it dispatches)
+          # Using testCompletedAt for both would report a release dispatched
+          # seconds ago as stalled whenever the restriction itself took longer
+          # than the window, which is the ordinary case, not an edge one.
+          # `//` only substitutes null, not "", and an empty @tsv field would
+          # collapse under bash's IFS-whitespace rule: `read` would then shift
+          # testStatus into COMPLETED and every column after it would be wrong.
+          # nonempty() forces a real value into every field.
+          jq -r '
+            def nonempty(v): if (v // "") == "" then null else v end;
+            .Items[]
+            | [ (nonempty(.imageTag.S) // "unknown"),
+                (nonempty(.changeSetId.S) // "unknown"),
+                (if (.testStatus.S // "") == "production_dispatched"
+                 then (nonempty(.productionTriggeredAt.S) // nonempty(.testCompletedAt.S) // nonempty(.createdDate.S) // "unknown")
+                 else (nonempty(.testCompletedAt.S) // nonempty(.createdDate.S) // "unknown")
+                 end),
+                (nonempty(.testStatus.S) // "unknown") ]
+            | @tsv
+          ' scan.json > waiting.tsv
 
           STALLED=0
           CUTOFF=$(( $(date -u +%s) - STALL_HOURS * 3600 ))
 
           while IFS=$'\t' read -r TAG CHANGESET COMPLETED STATUS; do
+            # Belt and braces: the jq above should never emit an empty field,
+            # but if a column is ever added and one does collapse, this catches
+            # it before `date -d ""` turns it into midnight today, which reads
+            # as recent and would hide the row rather than report it.
+            if [ -z "${COMPLETED:-}" ]; then
+              echo "⚠️  ${TAG} (${CHANGESET}, ${STATUS}): no completion time recorded, treating as stalled"
+              STALLED=$((STALLED + 1))
+              continue
+            fi
+
             CREATED_TS=$(date -u -d "${COMPLETED}" +%s 2>/dev/null || echo 0)
 
             if [ "${CREATED_TS}" -eq 0 ]; then
-              echo "⚠️  ${TAG} (${CHANGESET}): unparseable completion time '${COMPLETED}', treating as stalled"
+              echo "⚠️  ${TAG} (${CHANGESET}, ${STATUS}): unparseable completion time '${COMPLETED}', treating as stalled"
               STALLED=$((STALLED + 1))
               continue
             fi

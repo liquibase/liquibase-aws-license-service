@@ -627,10 +627,41 @@ def confirm_dispatched_releases():
 
     print(f"\n=== Confirming {len(dispatched)} dispatched release(s) ===")
 
+    versions = get_product_versions()
+
+    # Publication is read per VERSION, never from the product-level Visibility.
+    # The product itself is Public and stays Public, so confirming against it
+    # would promote every dispatched row on the next cycle and put back exactly
+    # the false "released" state this function exists to remove.
+    #
+    # This listing is a ContainerProduct@1.0 and restrict-aws-mp-listing.sh
+    # already relies on Versions[].DeliveryOptions[].Id, so the per-version
+    # delivery option is the right unit. Visibility on it is the part not yet
+    # exercised by shipped code, so the shape is asserted rather than assumed:
+    # if nothing in the whole listing reports a visibility, this check can never
+    # confirm anything and every release would sit at production_dispatched for
+    # good. That is the silent indefinite wait TECHOPS-1091 is about, so it
+    # fails loudly instead. A version-level Visibility is accepted too, since
+    # some entity shapes carry it there.
+    saw_visibility = any(
+        version.get('Visibility')
+        or any(option.get('Visibility') for option in version.get('DeliveryOptions', []))
+        for version in versions
+    )
+
+    if versions and not saw_visibility:
+        print(
+            "::error::No version on the listing reports a Visibility, so a dispatched "
+            "release can never be confirmed. The DescribeEntity shape has changed; "
+            "confirm_dispatched_releases needs updating."
+        )
+        return 0
+
     public_titles = {
         version.get('VersionTitle')
-        for version in get_product_versions()
-        if any(
+        for version in versions
+        if version.get('Visibility') == 'Public'
+        or any(
             option.get('Visibility') == 'Public'
             for option in version.get('DeliveryOptions', [])
         )
