@@ -61,13 +61,35 @@ jobs:
 
       - name: Check if liquibase-secure version changed
         id: version_changed
+        env:
+          CURRENT_VERSION_IN: ${{ steps.current_version.outputs.version }}
+          INPUT_VERSION_IN: ${{ inputs.new_version }}
         run: |
-          CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
-          INPUT_VERSION="${{ inputs.new_version }}"
+          CURRENT_VERSION="${CURRENT_VERSION_IN}"
+          INPUT_VERSION="${INPUT_VERSION_IN}"
 
           # If new_version was passed via workflow_dispatch, use it directly
           # This avoids the fragile git diff approach when triggered by dependabot-sync-and-merge.yml
           if [ -n "$INPUT_VERSION" ]; then
+            # new_version becomes the marketplace test tag, and a marketplace
+            # version title is permanent. If the caller names a version this
+            # checkout does not actually contain, the image gets labelled with a
+            # version it is not built from: exactly the mislabelled test-5.2.2
+            # (built from a 5.2.1 base) that made 5.2.2 unreleasable.
+            #
+            # This is safe to make fatal only because the caller waits for its
+            # bump to be MERGED before dispatching (see the "Wait for the bump
+            # to merge" step in dependabot-sync-and-merge.yml). `gh pr merge
+            # --auto` only arms auto-merge and returns, so dispatching straight
+            # after it meant main still held the old version and this guard
+            # failed every Dependabot bump. With the wait in place, disagreement
+            # here means main genuinely moved underneath the dispatch and the
+            # run must not proceed.
+            if [ "$INPUT_VERSION" != "$CURRENT_VERSION" ]; then
+              echo "::error::Dispatched with new_version '$INPUT_VERSION' but this checkout of pom.xml has '$CURRENT_VERSION'. Refusing to label an image with a version it was not built from."
+              exit 1
+            fi
+
             echo "✅ Version provided via workflow_dispatch input: $INPUT_VERSION"
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "new_version=$INPUT_VERSION" >> $GITHUB_OUTPUT
@@ -120,9 +142,11 @@ jobs:
       - name: Verify Dockerfile and pom.xml versions match
         if: steps.version_changed.outputs.changed == 'true'
         id: verify_match
+        env:
+          POM_VERSION_IN: ${{ steps.current_version.outputs.version }}
         run: |
           DOCKERFILE_VERSION=$(grep -E '^FROM liquibase/liquibase-secure:' Dockerfile | head -1 | cut -d':' -f2 | cut -d' ' -f1)
-          POM_VERSION="${{ steps.current_version.outputs.version }}"
+          POM_VERSION="${POM_VERSION_IN}"
 
           echo "Dockerfile version: $DOCKERFILE_VERSION"
           echo "pom.xml version: $POM_VERSION"
@@ -140,10 +164,30 @@ jobs:
       - name: Generate test version tag
         if: steps.version_changed.outputs.changed == 'true' && steps.verify_match.outputs.match == 'true'
         id: test_version
+        env:
+          # Expanded into the environment rather than into the script text.
+          # new_version can originate from the workflow_dispatch input, so a
+          # crafted value would otherwise run as shell code in this step.
+          NEW_VERSION: ${{ steps.version_changed.outputs.new_version }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          # Use the liquibase-secure version for the test tag
-          LIQUIBASE_SECURE_VERSION="${{ steps.version_changed.outputs.new_version }}"
-          TEST_VERSION="test-${LIQUIBASE_SECURE_VERSION}"
+          # Use the liquibase-secure version for the test tag, plus the run
+          # number and attempt so each attempt gets a tag of its own.
+          #
+          # The tag used to be exactly test-<version>. Two things make that a
+          # one-shot: ECR tags are immutable, so a rebuild cannot reuse the tag,
+          # and AWS Marketplace version titles are permanent and cannot be
+          # deleted, only restricted. So any attempt that failed part-way left
+          # that version permanently unreleasable and recovery meant inventing a
+          # tag by hand. That is how the listing accumulated its devopstest-*
+          # entries. Keep the test- prefix: the polling Lambda selects on it.
+          # run_number alone is not enough: it is fixed for the life of a run,
+          # and "Re-run failed jobs" keeps it while incrementing run_attempt.
+          # Without the attempt, the retry path described above regenerates the
+          # previous tag and hits the immutable ECR tag all over again.
+          LIQUIBASE_SECURE_VERSION="${NEW_VERSION}"
+          TEST_VERSION="test-${LIQUIBASE_SECURE_VERSION}-${RUN_NUMBER}.${RUN_ATTEMPT}"
           echo "Generated test version tag: $TEST_VERSION"
           echo "tag=$TEST_VERSION" >> $GITHUB_OUTPUT
 
@@ -151,8 +195,11 @@ jobs:
         if: steps.version_changed.outputs.changed == 'true' && steps.verify_match.outputs.match == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Same reason as the Generate and Post summary steps: the tag is
+          # derived from new_version, which can come from the dispatch input.
+          TEST_TAG_IN: ${{ steps.test_version.outputs.tag }}
         run: |
-          TEST_TAG="${{ steps.test_version.outputs.tag }}"
+          TEST_TAG="${TEST_TAG_IN}"
           echo "🚀 Triggering deploy-extension-to-marketplace.yml (dry_run=true)"
           echo "   Test image tag: $TEST_TAG"
 
@@ -164,19 +211,30 @@ jobs:
           echo "✅ Workflow triggered successfully!"
           echo "Check the workflow run at: https://github.com/${{ github.repository }}/actions/workflows/deploy-extension-to-marketplace.yml"
 
+      # Every value here goes through env, not template expansion. new_version
+      # can originate from the workflow_dispatch input, and a `run:` block is a
+      # shell script: expanding it inline would execute whatever it contains.
+      # The Generate step above was already hardened this way; this step is the
+      # same sink and was missed.
       - name: Post summary
         if: always()
+        env:
+          CURRENT_VERSION: ${{ steps.current_version.outputs.version }}
+          CHANGED: ${{ steps.version_changed.outputs.changed }}
+          OLD_VERSION: ${{ steps.version_changed.outputs.old_version }}
+          NEW_VERSION: ${{ steps.version_changed.outputs.new_version }}
+          MATCH: ${{ steps.verify_match.outputs.match }}
         run: |
           echo "## Automation Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Current Version:** ${{ steps.current_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Current Version:** ${CURRENT_VERSION}" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ steps.version_changed.outputs.changed }}" == "true" ]; then
-            echo "**Previous Version:** ${{ steps.version_changed.outputs.old_version }}" >> $GITHUB_STEP_SUMMARY
-            echo "**New Version:** ${{ steps.version_changed.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${CHANGED}" == "true" ]; then
+            echo "**Previous Version:** ${OLD_VERSION}" >> $GITHUB_STEP_SUMMARY
+            echo "**New Version:** ${NEW_VERSION}" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
-            if [ "${{ steps.verify_match.outputs.match }}" == "true" ]; then
+            if [ "${MATCH}" == "true" ]; then
               echo "✅ **Status:** New version detected! Deployment workflow triggered in dry-run mode" >> $GITHUB_STEP_SUMMARY
             else
               echo "❌ **Status:** Version mismatch between Dockerfile and pom.xml" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,144 @@
+name: Deploy Marketplace Poller Lambda
+
+# Ships lambda/marketplace-poller to the PollMarketplaceChangeSetStatus function
+# in the LiquibaseAWSMP account.
+#
+# Why this workflow exists: the Terraform for that function deliberately ignores
+# filename and source_code_hash, on the stated assumption that "CI/CD manages
+# Lambda code deployment". No such pipeline was ever built, so the only copy of
+# the code was the zip deployed in AWS. It could not be diffed or reviewed, and
+# a defect in it survived an earlier round of fixes to the very same function and
+# then stalled a release for 30 hours. Source now lives in this repository next
+# to the restrict script it has to agree with, and this workflow is the path from
+# one to the other.
+#
+# On a pull request the tests run and nothing is deployed. Deployment happens
+# only on push to main, and only when the Lambda source actually changed.
+
+on:
+  pull_request:
+    paths:
+      - 'lambda/marketplace-poller/**'
+      - '.github/workflows/deploy-marketplace-poller-lambda.yml'
+      # The Lambda must keep matching the change type this script submits, and a
+      # test asserts exactly that. Run it when either side moves.
+      - '.github/utils/restrict-aws-mp-listing.sh'
+  push:
+    branches:
+      - main
+    paths:
+      - 'lambda/marketplace-poller/**'
+      - '.github/workflows/deploy-marketplace-poller-lambda.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-marketplace-poller-lambda
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.11' # match the Lambda runtime
+
+      - name: Install test dependencies
+        run: python -m pip install --quiet boto3 urllib3 pytest pyyaml
+
+      - name: Run tests
+        working-directory: lambda/marketplace-poller
+        run: python -m pytest test_lambda_function.py -v
+
+      - name: Check it imports under the Lambda entrypoint
+        working-directory: lambda/marketplace-poller
+        run: python -c "import lambda_function; assert callable(lambda_function.lambda_handler)"
+
+  deploy:
+    # Only from main, never from a pull request. The ref check is not
+    # redundant: workflow_dispatch accepts any ref, so without it a dispatch
+    # from a feature branch would deploy that branch's lambda_function.py
+    # straight to the production function.
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-east-1
+      FUNCTION_NAME: PollMarketplaceChangeSetStatus
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Configure AWS credentials for vault access
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Get secrets from vault
+        id: vault-secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@2cb1a461cbd4865ac4299648312e4704c646cd53 # v3.0.1
+        with:
+          secret-ids: |
+            ,/vault/liquibase
+          parse-json-secrets: true
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
+          aws-region: us-east-1
+
+      - name: Package
+        working-directory: lambda/marketplace-poller
+        run: |
+          set -euo pipefail
+          # boto3 and urllib3 are provided by the python3.11 runtime, so the zip
+          # is just the source. Nothing to vendor.
+          zip -j -r "${RUNNER_TEMP}/marketplace-poller.zip" lambda_function.py
+          unzip -l "${RUNNER_TEMP}/marketplace-poller.zip"
+
+      - name: Deploy
+        run: |
+          set -euo pipefail
+
+          aws lambda update-function-code \
+            --function-name "${FUNCTION_NAME}" \
+            --zip-file "fileb://${RUNNER_TEMP}/marketplace-poller.zip" \
+            --publish \
+            --region "${AWS_REGION}" \
+            --output json > /tmp/deploy.json
+
+          jq -r '"Deployed version \(.Version), \(.CodeSize) bytes, sha256 \(.CodeSha256)"' /tmp/deploy.json
+
+          aws lambda wait function-updated \
+            --function-name "${FUNCTION_NAME}" \
+            --region "${AWS_REGION}"
+
+      - name: Verify the deployed handler still resolves
+        run: |
+          set -euo pipefail
+          HANDLER=$(aws lambda get-function-configuration \
+            --function-name "${FUNCTION_NAME}" \
+            --region "${AWS_REGION}" \
+            --query Handler --output text)
+
+          echo "Handler: ${HANDLER}"
+
+          # A mismatch here is what broke this function once before: the handler
+          # pointed at a module that did not exist and every invocation died on
+          # import.
+          if [ "${HANDLER}" != "lambda_function.lambda_handler" ]; then
+            echo "::error::Unexpected handler '${HANDLER}'. The deployed zip exposes lambda_function.lambda_handler."
+            exit 1
+          fi

@@ -22,6 +22,15 @@ on:
         description: Test Image tag for the ECR liquibase/liquibaseSecure. QA-use e.g `qa-<version>`
         required: true
         default: ''
+      # Deliberately separate from image_tag. image_tag is an ECR tag to build
+      # and the dry-run job uses it that way; this is a bare liquibase-secure
+      # version that already passed ECS validation. Overloading one input to
+      # mean both would make a manual production dispatch fail for anyone who
+      # filled image_tag in as its own description instructs.
+      validated_version:
+        description: 'Set by the marketplace poller: the liquibase-secure version that passed ECS validation. Leave empty to release whatever is on main.'
+        required: false
+        default: ''
       dry_run:
         description: 'Run this as a dry run.'
         required: false
@@ -54,18 +63,37 @@ jobs:
           echo "Liquibase Secure version: $DOCKERFILE_LIQUIBASE_SECURE_VERSION"
           echo "dockerfile_liquibase_secure_version=$DOCKERFILE_LIQUIBASE_SECURE_VERSION" >> $GITHUB_OUTPUT
 
+      # The two versions are read from step outputs, NOT from bare shell variables.
+      # Writing to $GITHUB_OUTPUT does not export a value into a later step's
+      # environment, so the previous form compared two unset variables: "" == ""
+      # was always true and this gate could never fail. It let a run whose
+      # Dockerfile and pom disagreed proceed to submit a marketplace version.
       - name: Check if versions match
         id: check_versions
+        env:
+          POM_VERSION: ${{ steps.pom_liquibase_secure_version.outputs.pom_liquibase_secure_version }}
+          DOCKERFILE_VERSION: ${{ steps.dockerfile_liquibase_secure_version.outputs.dockerfile_liquibase_secure_version }}
         run: |
-          if [ "$POM_LIQUIBASE_SECURE_VERSION" == "$DOCKERFILE_LIQUIBASE_SECURE_VERSION" ]; then
-            echo "versions_match=true" >> $GITHUB_OUTPUT
-          else
-            echo "versions_match=false" >> $GITHUB_OUTPUT
+          echo "pom.xml:    '${POM_VERSION}'"
+          echo "Dockerfile: '${DOCKERFILE_VERSION}'"
+
+          # An empty value means the grep above stopped matching, e.g. after a
+          # Dockerfile or pom restructure. Treat it as a failure rather than
+          # letting two empty strings compare equal.
+          if [ -z "$POM_VERSION" ] || [ -z "$DOCKERFILE_VERSION" ]; then
+            echo "versions_match=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Could not read the liquibase-secure version from pom.xml ('${POM_VERSION}') and/or Dockerfile ('${DOCKERFILE_VERSION}'). Refusing to submit a marketplace version."
+            exit 1
           fi
 
-      - name: Output version match result
-        run: |
-          echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
+          if [ "$POM_VERSION" != "$DOCKERFILE_VERSION" ]; then
+            echo "versions_match=false" >> "$GITHUB_OUTPUT"
+            echo "::error::liquibase-secure version mismatch. Dockerfile: ${DOCKERFILE_VERSION}, pom.xml: ${POM_VERSION}. The image would be built from one version and labelled with another, so refusing to continue."
+            exit 1
+          fi
+
+          echo "versions_match=true" >> "$GITHUB_OUTPUT"
+          echo "✅ Versions match: ${POM_VERSION}"
 
   dry-run:
     # run this job for dry_run or when it is a repository_dispatch event
@@ -129,7 +157,12 @@ jobs:
           provenance: false # Disables the generation of provenance attestation
           # the tags can be either from input or test_tag
           tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag || env.test_tag }}
-        continue-on-error: true
+
+      # No continue-on-error here. It used to swallow a failed push and let the
+      # next step submit a marketplace version pointing at whatever image was
+      # already sitting in ECR under that tag. ECR tags are immutable, so a
+      # re-run of an existing tag fails the push and the submitted version would
+      # describe stale content while the job reported success.
 
       - name: Submit New Version Request for AWS MP Listing
         env:
@@ -196,6 +229,36 @@ jobs:
               echo "LATEST_TAG=$LATEST_TAG"
               echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
 
+          # This job builds and submits whatever version the Dockerfile on main
+          # says, which is not necessarily the version that was validated. The
+          # poller dispatches the validated version as image_tag so the two can
+          # be compared here. A mismatch means main moved between validation and
+          # release, and publishing would ship a version nobody tested. Public
+          # marketplace versions cannot be deleted, only restricted, so this
+          # fails instead.
+          #
+          # validated_version is empty for manual dispatches that intend "just
+          # release what is on main"; those skip the check rather than fail. It
+          # is never image_tag: that input is the ECR tag to build, so reading
+          # it here would reject a hand-filled `qa-5.2.2` as an unvalidated
+          # version and block the manual release path entirely.
+          - name: Verify the Dockerfile matches the validated version
+            env:
+              VALIDATED_VERSION: "${{ inputs.validated_version }}"
+              DOCKERFILE_VERSION: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
+            run: |
+              if [ -z "${VALIDATED_VERSION}" ]; then
+                echo "No validated version supplied; releasing the Dockerfile version ${DOCKERFILE_VERSION}."
+                exit 0
+              fi
+
+              if [ "${VALIDATED_VERSION}" != "${DOCKERFILE_VERSION}" ]; then
+                echo "::error::Validated version '${VALIDATED_VERSION}' does not match Dockerfile version '${DOCKERFILE_VERSION}'. Refusing to publish an unvalidated version."
+                exit 1
+              fi
+
+              echo "✅ Dockerfile version ${DOCKERFILE_VERSION} matches the validated version."
+
           - name: Build and Push Docker Image
             env:
               ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
@@ -208,7 +271,10 @@ jobs:
               platforms: linux/amd64,linux/arm64
               provenance: false # Disables the generation of provenance attestation
               tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
-            continue-on-error: true
+
+          # No continue-on-error here, for the same reason as the dry-run job.
+          # On this path the consequence is worse: a masked push failure would
+          # submit a PUBLIC version describing an image that was never pushed.
 
           - name: Submit Request for AWS MP Listing
             env:
