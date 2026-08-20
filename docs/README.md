@@ -1,6 +1,6 @@
 # Liquibase AWS Marketplace Extension Deployment and Testing Process
 
-## 🗺️ What happens when a new Secure version lands, in plain language
+## 🗺️ What happens when a new Secure version lands? 
 
 The diagram and per-workflow notes below are the reference. This is the same
 story told once, end to end, for anyone who just needs to know what to expect.
