@@ -97,20 +97,29 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Both states are transient, and anything lingering in either is the
-          # failure mode we are watching for:
+          # All three states are transient, and anything lingering in any of
+          # them is the failure mode we are watching for:
+          #   testing               validation dispatched, not yet reported back
           #   completed             validation passed, waiting on the restriction
           #   production_dispatched GitHub accepted the release run, but the
           #                         version is not public on the listing yet
-          # The second exists because a 204 from the dispatch API is not a
+          # The last exists because a 204 from the dispatch API is not a
           # release: the run can still fail at the Docker push or the
           # validated-version gate, and the poller deliberately does not promote
           # the row until the listing proves otherwise.
+          #
+          # `testing` is here because it is where a release dies quietly. The
+          # ECS run or the restrict step can hang or be cancelled before
+          # anything sets testStatus=completed, and such a row then ages
+          # forever: the poller's pass 2 only reads completed rows, and the
+          # orphan scan skips it because the poller did track the imageTag. It
+          # is the stalled state the ticket asks this watchdog to catch, and it
+          # was the one state it could not see.
           aws dynamodb scan \
             --table-name "${TABLE_NAME}" \
             --region "${AWS_REGION}" \
-            --filter-expression 'testStatus IN (:completed, :dispatched)' \
-            --expression-attribute-values '{":completed":{"S":"completed"},":dispatched":{"S":"production_dispatched"}}' \
+            --filter-expression 'testStatus IN (:testing, :completed, :dispatched)' \
+            --expression-attribute-values '{":testing":{"S":"testing"},":completed":{"S":"completed"},":dispatched":{"S":"production_dispatched"}}' \
             --output json > scan.json
 
           COUNT=$(jq '.Items | length' scan.json)
@@ -133,6 +142,10 @@ jobs:
           # instant it completed. Fall back to createdDate for rows written
           # before testCompletedAt existed.
           # Each state is measured from the moment it was ENTERED:
+          #   testing               -> createdDate (mark_changeset_processed
+          #                            writes it in the same put_item that sets
+          #                            testStatus=testing, so for this state it
+          #                            IS the entry time)
           #   completed             -> testCompletedAt
           #   production_dispatched -> productionTriggeredAt (set by the poller's
           #                            update_test_status when it dispatches)
@@ -150,6 +163,8 @@ jobs:
                 (nonempty(.changeSetId.S) // "unknown"),
                 (if (.testStatus.S // "") == "production_dispatched"
                  then (nonempty(.productionTriggeredAt.S) // nonempty(.testCompletedAt.S) // nonempty(.createdDate.S) // "unknown")
+                 elif (.testStatus.S // "") == "testing"
+                 then (nonempty(.createdDate.S) // "unknown")
                  else (nonempty(.testCompletedAt.S) // nonempty(.createdDate.S) // "unknown")
                  end),
                 (nonempty(.testStatus.S) // "unknown") ]
@@ -306,8 +321,10 @@ jobs:
           if [ "${STALLED}" -gt 0 ]; then
             {
               echo ""
-              echo "A validated test image has not reached production release. Usual causes:"
+              echo "A tracked test image has not reached production release. Usual causes:"
               echo ""
+              echo "* validation was dispatched but the ECS run or the restrict step never"
+              echo "  reported back, so the row is still at testStatus=testing"
               echo "* the poller cannot match the restriction change set, so the release never triggers"
               echo "* the restriction change set failed on the marketplace side"
               echo "* the production dispatch failed and nothing retried"

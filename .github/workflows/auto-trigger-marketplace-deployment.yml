@@ -75,9 +75,16 @@ jobs:
             # version title is permanent. If the caller names a version this
             # checkout does not actually contain, the image gets labelled with a
             # version it is not built from: exactly the mislabelled test-5.2.2
-            # (built from a 5.2.1 base) that made 5.2.2 unreleasable. The caller
-            # dispatches after merging its bump, so disagreement here means main
-            # moved underneath it and the run must not proceed.
+            # (built from a 5.2.1 base) that made 5.2.2 unreleasable.
+            #
+            # This is safe to make fatal only because the caller waits for its
+            # bump to be MERGED before dispatching (see the "Wait for the bump
+            # to merge" step in dependabot-sync-and-merge.yml). `gh pr merge
+            # --auto` only arms auto-merge and returns, so dispatching straight
+            # after it meant main still held the old version and this guard
+            # failed every Dependabot bump. With the wait in place, disagreement
+            # here means main genuinely moved underneath the dispatch and the
+            # run must not proceed.
             if [ "$INPUT_VERSION" != "$CURRENT_VERSION" ]; then
               echo "::error::Dispatched with new_version '$INPUT_VERSION' but this checkout of pom.xml has '$CURRENT_VERSION'. Refusing to label an image with a version it was not built from."
               exit 1

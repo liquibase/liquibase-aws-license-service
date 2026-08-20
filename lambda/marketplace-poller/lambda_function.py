@@ -517,7 +517,19 @@ def process_new_versions():
         print(f"Checking if {image_tag} is already restricted...")
         restriction = find_restriction_changeset(image_tag)
 
-        if restriction:
+        # find_restriction_changeset() returns the match unfiltered, including
+        # terminal FAILED/CANCELLED ones, so the status has to be read here.
+        # Bare truthiness treated a restriction that failed marketplace-side as
+        # proof of validation: the version stays Public and unvalidated, the row
+        # is filed with no testStatus so the watchdog's stalled scan cannot see
+        # it, and its imageTag makes the orphan scan skip it too. That is a
+        # permanent silent stall, which is the failure class this poller exists
+        # to remove.
+        #
+        # PREPARING and APPLYING do count as validated: a restriction is only
+        # submitted by run-task-definitions.yml after the ECS tests pass, so its
+        # existence in any non-failed state means validation already happened.
+        if restriction and restriction['Status'] not in TERMINAL_FAILURE_STATUSES:
             print(
                 f"⏭️  Image {image_tag} already restricted "
                 f"(ChangeSet: {restriction['ChangeSetId']}, Status: {restriction['Status']}); "
@@ -527,15 +539,33 @@ def process_new_versions():
             processed += 1
             continue
 
+        if restriction:
+            print(
+                f"⚠️  Restriction {restriction['ChangeSetId']} for {image_tag} ended "
+                f"{restriction['Status']}, so this image is still public and unvalidated. "
+                f"Dispatching validation again; run-task-definitions.yml resubmits the "
+                f"restriction when it passes."
+            )
+
         print(f"✅ No restriction found for {image_tag} - proceeding with test workflow")
 
         if trigger_github_workflow(GITHUB_WORKFLOW_TEST, image_tag=image_tag):
             mark_changeset_processed(changeset_id, image_tag, 'test_triggered', test_status='testing')
             triggered += 1
+            processed += 1
         else:
-            mark_changeset_processed(changeset_id, image_tag, 'failed_trigger')
-
-        processed += 1
+            # Deliberately NOT marked processed. Recording it made
+            # is_changeset_processed() true forever, so a single transient
+            # GitHub API failure retired the version permanently: no testStatus
+            # for the watchdog's stalled scan to match, and an imageTag that
+            # makes its orphan scan skip the row. Leaving the change set
+            # unprocessed means the next 15-minute cycle simply tries again, and
+            # if it never succeeds the version stays untracked, which is exactly
+            # what the watchdog's orphan scan reports.
+            print(
+                f"::error::Could not dispatch validation for {image_tag}. Leaving the "
+                f"change set unprocessed so the next cycle retries."
+            )
 
     return processed, triggered
 

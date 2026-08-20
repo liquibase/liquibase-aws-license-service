@@ -239,6 +239,50 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
 
+      # Step 3b: wait for that merge to actually land before dispatching.
+      #
+      # `gh pr merge --auto` only ENABLES auto-merge and returns; the merge
+      # happens later, once the required checks pass, which takes minutes. The
+      # dispatch below runs auto-trigger-marketplace-deployment.yml against
+      # --ref main and passes new_version, and that workflow refuses to run when
+      # the version it is handed is not the version main's pom.xml contains,
+      # because labelling an image with a version it was not built from is what
+      # made 5.2.2 unreleasable. Dispatching before the merge lands therefore
+      # failed that guard on essentially every Dependabot bump, and the release
+      # only ever happened via the push-to-main git-diff fallback.
+      #
+      # Waiting here is what makes the dispatch path deterministic. The timeout
+      # is loud on purpose: a bump whose merge never lands has not been released
+      # and must not look like it was.
+      - name: Wait for the bump to merge
+        if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true' && contains(steps.metadata.outputs.dependency-names, 'liquibase/liquibase-secure')
+        run: |
+          set -euo pipefail
+
+          # 60 x 30s = 30 minutes. The required checks on this repository run in
+          # a few minutes; 30 is generous enough to absorb a queue backlog and
+          # short enough that a wedged merge is reported the same hour.
+          for _ in $(seq 1 60); do
+            # A single API blip must not abort the release path; the timeout
+            # below is the real backstop, so an unreadable answer is just
+            # "not merged yet".
+            MERGED=$(gh pr view "$PR_URL" --json merged --jq '.merged' 2>/dev/null || echo "unknown")
+
+            if [ "$MERGED" = "true" ]; then
+              echo "✅ Bump merged."
+              exit 0
+            fi
+
+            echo "⏳ Auto-merge still pending, waiting for required checks..."
+            sleep 30
+          done
+
+          echo "::error::Auto-merge did not complete within 30 minutes for $PR_URL. Not dispatching the marketplace deployment: main does not carry this bump, so the run would be refused anyway. Check the required status checks on the pull request."
+          exit 1
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
+
       # Step 4: Trigger marketplace deployment for liquibase-secure updates
       - name: Trigger marketplace deployment validation
         if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true' && contains(steps.metadata.outputs.dependency-names, 'liquibase/liquibase-secure')

@@ -274,6 +274,74 @@ class NewVersionScanTest(unittest.TestCase):
     @patch.object(lf, 'mark_changeset_processed')
     @patch.object(lf, 'trigger_github_workflow', return_value=True)
     @patch.object(lf, 'is_changeset_processed', return_value=False)
+    def test_in_flight_restriction_still_counts_as_validated(self, _processed, trigger, mark):
+        """A restriction mid-apply means the ECS tests already passed."""
+        self.client.list_change_sets.return_value = {
+            'ChangeSetSummaryList': [summary('5yb1p6ojdo2aet2sse0jjfby1')]
+        }
+        self.client.describe_change_set.return_value = ADD_DETAIL
+
+        with patch.object(lf, 'find_restriction_changeset',
+                          return_value={'ChangeSetId': 'r', 'Status': 'APPLYING'}):
+            lf.process_new_versions()
+
+        trigger.assert_not_called()
+        self.assertEqual(mark.call_args.args[2], 'skipped_already_restricted')
+
+    @patch.object(lf, 'mark_changeset_processed')
+    @patch.object(lf, 'trigger_github_workflow', return_value=True)
+    @patch.object(lf, 'is_changeset_processed', return_value=False)
+    def test_failed_restriction_is_not_mistaken_for_validation(self, _processed, trigger, mark):
+        """A restriction that failed leaves the version public and unvalidated.
+
+        Filing it as skipped_already_restricted wrote a row with an imageTag and
+        no testStatus, which the watchdog's stalled scan cannot match and its
+        orphan scan skips: a permanent silent stall.
+        """
+        self.client.list_change_sets.return_value = {
+            'ChangeSetSummaryList': [summary('5yb1p6ojdo2aet2sse0jjfby1')]
+        }
+        self.client.describe_change_set.return_value = ADD_DETAIL
+
+        for status in lf.TERMINAL_FAILURE_STATUSES:
+            with self.subTest(status=status):
+                trigger.reset_mock()
+                mark.reset_mock()
+                lf.reset_invocation_cache()
+
+                with patch.object(lf, 'find_restriction_changeset',
+                                  return_value={'ChangeSetId': 'r', 'Status': status}):
+                    lf.process_new_versions()
+
+                trigger.assert_called_once_with(lf.GITHUB_WORKFLOW_TEST, image_tag=TEST_TAG)
+                self.assertEqual(mark.call_args.args[2], 'test_triggered')
+                self.assertEqual(mark.call_args.kwargs['test_status'], 'testing')
+
+    @patch.object(lf, 'mark_changeset_processed')
+    @patch.object(lf, 'trigger_github_workflow', return_value=False)
+    @patch.object(lf, 'is_changeset_processed', return_value=False)
+    def test_failed_dispatch_leaves_the_changeset_for_the_next_cycle(self, _processed, trigger, mark):
+        """Recording a failed dispatch retired the version permanently.
+
+        is_changeset_processed() would return True forever, and the row carried
+        no testStatus for the watchdog to see. Leaving it unmarked is what lets
+        the next 15-minute cycle retry.
+        """
+        self.client.list_change_sets.return_value = {
+            'ChangeSetSummaryList': [summary('5yb1p6ojdo2aet2sse0jjfby1')]
+        }
+        self.client.describe_change_set.return_value = ADD_DETAIL
+
+        with patch.object(lf, 'find_restriction_changeset', return_value=None):
+            processed, triggered = lf.process_new_versions()
+
+        trigger.assert_called_once()
+        mark.assert_not_called()
+        self.assertEqual((processed, triggered), (0, 0))
+
+    @patch.object(lf, 'mark_changeset_processed')
+    @patch.object(lf, 'trigger_github_workflow', return_value=True)
+    @patch.object(lf, 'is_changeset_processed', return_value=False)
     def test_dispatches_validation_for_new_test_version(self, _processed, trigger, _mark):
         self.client.list_change_sets.return_value = {
             'ChangeSetSummaryList': [summary('5yb1p6ojdo2aet2sse0jjfby1')]
