@@ -1,5 +1,43 @@
 # Liquibase AWS Marketplace Extension Deployment and Testing Process
 
+## 🗺️ What happens when a new Secure version lands, in plain language
+
+The diagram and per-workflow notes below are the reference. This is the same
+story told once, end to end, for anyone who just needs to know what to expect.
+
+**When Liquibase Secure X is published to Docker Hub:**
+
+1. **Dependabot notices** on its daily check and opens **one** pull request bumping the Dockerfile. It used to open two, one for the Dockerfile and one for the pom, which is how the two drifted apart and produced an image labelled 5.2.2 built from a 5.2.1 base. The pom is now ignored for this dependency so there is only ever one pull request.
+2. **A bot tidies that pull request**: it syncs `pom.xml` and `amazon.aws.version` to match the Dockerfile, comments what it changed, then arms auto-merge.
+3. **It waits for the merge to actually land**, up to 30 minutes. Arming auto-merge is not merging: the merge happens later, once the required checks pass. Everything downstream reads `main`, so acting before the merge lands means reading a `main` that does not have the bump yet.
+4. **A test image is built and shipped to the marketplace** as a hidden version, labelled `test-X-<run>.<attempt>`. The run and attempt numbers mean a failed attempt can be retried; marketplace version titles are permanent, so a plain `test-X` label would burn that version's name on the first failure. If the image fails to push, the run goes red instead of carrying on with whatever stale image is already in ECR.
+5. **AWS takes roughly 30 to 45 minutes** to accept that hidden version. (The 5.2.2 submission took 42 minutes: change set `5yb1p6ojdo2aet2sse0jjfby1`, 12:24 to 13:06.)
+6. **The polling Lambda checks every 15 minutes.** When it sees the hidden version is live, it dispatches the ECS test suite against it.
+7. **Tests pass, so the hidden version is withdrawn** from the listing and the tracking table records that this one passed.
+8. **The Lambda sees the withdrawal and publishes X publicly.** This is the step that was broken: it looked for the wrong kind of record, and compared a label that kind of record never carries, so it never fired once. Every public version before this fix was dispatched by a human.
+9. **The Lambda confirms the listing actually shows X publicly** before calling it done, rather than trusting that the publish request was accepted. A dispatch that GitHub accepts can still fail further down.
+10. **A watchdog sweeps every two hours.** Anything stuck part-way for more than two hours turns a run red so somebody finds out. Previously a stall was indistinguishable from an idle pipeline, which is how 5.2.2 sat unnoticed for 30 hours.
+
+End to end: roughly **one to two hours**, mostly waiting on AWS, with no human
+touching anything.
+
+### 🏷️ Reading a test tag
+
+`test-5.2.3-482.1` breaks down as:
+
+| Part | Meaning |
+|---|---|
+| `test-` | Hidden validation image, never served to customers |
+| `5.2.3` | The Secure version under test |
+| `482` | GitHub Actions run number |
+| `.1` | Attempt within that run |
+
+A retry of the same version is `test-5.2.3-482.2`: a new, permitted title that is
+still recognisably 5.2.3. Pre-release versions keep their own hyphen, so
+`test-5.2.2-beta-482.1` resolves to `5.2.2-beta`; only a trailing numeric suffix
+is stripped. Tags predating this scheme still resolve, so `test-5.2.2` yields
+`5.2.2`.
+
 ## 🚀 Deploying a test extension to AWS Marketplace
 
 ### Complete Automation Flow
@@ -124,8 +162,9 @@
 **Note:** `com.liquibase:liquibase-commercial` is deliberately in the maven `ignore` list. It used to get its own PR, which merged in seconds while the Dockerfile PR waited, leaving `main` with a pom and Dockerfile on different versions. `liquibase-secure.version` is synced from the Dockerfile instead, so one PR is always self-consistent. `software.amazon.awssdk:*` is ignored for a different reason (see TECHOPS-622).
 
 #### 2. `dependabot-sync-and-merge.yml` - Version Synchronization
-**What it does:** For Dockerfile PRs, ensures pom.xml uses the same liquibase-secure version; auto-merges all Dependabot PRs; triggers marketplace deployment validation for liquibase-secure updates
+**What it does:** For Dockerfile PRs, ensures pom.xml uses the same liquibase-secure version; arms auto-merge on all Dependabot PRs; **waits for that merge to land**; then triggers marketplace deployment validation for liquibase-secure updates
 **Why needed:** Prevents version mismatches between build and runtime; eliminates manual PR merging; ensures deployment pipeline starts reliably
+**The merge wait is load-bearing:** `gh pr merge --auto` only *arms* auto-merge and returns; the merge itself happens minutes later once the required checks pass. The dispatch below hands `new_version` to a workflow that runs against `--ref main` and refuses to proceed when that version is not what `main`'s pom.xml contains. Dispatching immediately after arming auto-merge therefore failed that guard on essentially every bump, and the release survived only on the push-to-main git-diff fallback. The wait polls for up to 30 minutes and fails loudly if the merge never lands, because a bump that did not merge has not been released and must not look like it was.
 **Important:** Version sync only runs when the Dockerfile is modified in the PR. Non-Dockerfile PRs (e.g., Maven dependency bumps) skip the sync to avoid regressing pom.xml from a stale branch.
 **Without this:** You'd need to manually sync versions and rely solely on push events to trigger deployment
 
@@ -179,15 +218,39 @@
 **Why needed:** The Terraform for that function ignores `filename` and `source_code_hash` on the assumption that CI deploys the code, but no pipeline existed. The only copy of the code was the deployed zip, so it could not be diffed or reviewed, and a defect in it survived an earlier round of fixes to the same function.
 
 #### 9. `marketplace-release-watchdog.yml` - Stall Detection
-**What it does:** Every two hours, fails the run if a validated test image has been waiting more than `stall_hours` (default 2) for its production release
+**What it does:** Every two hours, fails the run if a tracked validation has been waiting more than `stall_hours` (default 2) to reach its production release
 **Why needed:** Nothing distinguished "no release in progress" from "a release wedged". The 5.2.2 stall logged the same waiting line every 15 minutes for over 30 hours and was noticed only because someone went looking.
+**States it watches**, each measured from the moment that state was entered:
+
+| `testStatus` | Meaning | Measured from |
+|---|---|---|
+| `testing` | Validation was dispatched but the ECS run or the restrict step never reported back | `createdDate` |
+| `completed` | Validation passed, waiting on the restriction to be matched | `testCompletedAt` |
+| `production_dispatched` | GitHub accepted the release run, but the version is not public on the listing yet | `productionTriggeredAt` |
+
+`testing` matters more than it looks. The polling Lambda's pass 2 only reads
+`completed` rows, and the second scan below skips anything whose `imageTag` the
+Lambda already tracked, so a row that dies at `testing` is invisible to both and
+ages forever. On the first run after this state was added, all three stalls found
+on the live table were sitting at `testing`.
+
+**Second scan:** it also reads the listing directly for `test-*` versions that are
+still Public and that the Lambda never tracked at all, which is the opposite
+failure: the poller being down longer than `LOOKBACK_DAYS`, after which the
+version falls out of its window for good.
+
+**Closing a row out:** a validation that is genuinely never going to release (a
+superseded workaround image, or historical debris) should be moved to
+`testStatus=abandoned` rather than deleted. No reader queries `abandoned`, so the
+row stops alerting, while keeping its `imageTag` means the second scan still counts
+it as tracked and will not flag the same version from the other direction.
 
 ### Automation Timing (Complete End-to-End)
 
 | Phase | Duration | Component |
 |-------|----------|-----------|
 | Version detection | ~1 day | Dependabot |
-| PR sync & merge | ~2 min | GitHub Actions (dependabot-sync-and-merge.yml) |
+| PR sync, then wait for the merge to land | ~2 min, plus up to 30 min waiting | GitHub Actions (dependabot-sync-and-merge.yml) |
 | Auto-trigger test deploy | ~30 sec | GitHub Actions |
 | Deploy test image | ~5 min | GitHub Actions |
 | AWS Marketplace test approval | ~30 min | AWS |
@@ -205,6 +268,11 @@ These are the intended timings. Until the restriction-matching fix, the producti
 release leg never fired at all and every public version was dispatched by hand, so
 treat any release exceeding this envelope as broken rather than slow. The watchdog
 exists to make that call for you.
+
+One caveat on reading the table: the sync step deliberately blocks while auto-merge
+waits on required checks, so a bump sitting there for 20 minutes is healthy, not
+stuck. Do not "optimise" that wait away; see the note under workflow 2 for what
+breaks when the dispatch runs ahead of the merge.
 
 ### :mag: If a release does not appear
 
