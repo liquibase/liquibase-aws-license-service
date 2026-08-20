@@ -45,11 +45,25 @@ jobs:
       contents: read
     env:
       AWS_REGION: us-east-1
-      TABLE_NAME: liquibase-secure-marketplace-changesets
-      PRODUCT_ID: prod-l2panlvbozc5e
-      STALL_HOURS: ${{ inputs.stall_hours || '2' }}
+      # These three are prefixed, and must stay prefixed.
+      #
+      # "Get secrets from vault" runs aws-secretsmanager-get-secrets with
+      # parse-json-secrets, which turns every key in /vault/liquibase into an
+      # environment variable and REFUSES to overwrite a name that already
+      # exists: "The environment name 'PRODUCT_ID' is already in use." Job-level
+      # env is set before that step runs, so an unprefixed PRODUCT_ID collided
+      # with a vault key and failed the step outright. Both scans were then
+      # skipped, which meant this watchdog could never once report a stall: the
+      # alarm for silent failures, silently doing nothing.
+      #
+      # AWS_REGION is left bare on purpose. configure-aws-credentials sets it
+      # before the vault step and that did not collide, so it is not a key in
+      # the secret.
+      MP_TABLE_NAME: liquibase-secure-marketplace-changesets
+      MP_PRODUCT_ID: prod-l2panlvbozc5e
+      MP_STALL_HOURS: ${{ inputs.stall_hours || '2' }}
     steps:
-      # STALL_HOURS reaches both scan steps as arithmetic. A non-numeric value
+      # MP_STALL_HOURS reaches both scan steps as arithmetic. A non-numeric value
       # aborts the step under `set -e`, and a zero-padded one like "08" is read
       # as octal and fails outright, so it is normalised and bounded once here
       # rather than trusted twice below.
@@ -57,20 +71,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ ! "${STALL_HOURS}" =~ ^[0-9]+$ ]]; then
-            echo "::error::stall_hours must be a whole number of hours, got '${STALL_HOURS}'"
+          if [[ ! "${MP_STALL_HOURS}" =~ ^[0-9]+$ ]]; then
+            echo "::error::stall_hours must be a whole number of hours, got '${MP_STALL_HOURS}'"
             exit 1
           fi
 
           # 10# forces base 10 so a leading zero is not read as octal.
-          HOURS=$((10#${STALL_HOURS}))
+          HOURS=$((10#${MP_STALL_HOURS}))
 
           if [ "${HOURS}" -lt 1 ] || [ "${HOURS}" -gt 168 ]; then
-            echo "::error::stall_hours must be between 1 and 168, got '${STALL_HOURS}'"
+            echo "::error::stall_hours must be between 1 and 168, got '${MP_STALL_HOURS}'"
             exit 1
           fi
 
-          echo "STALL_HOURS=${HOURS}" >> "$GITHUB_ENV"
+          echo "MP_STALL_HOURS=${HOURS}" >> "$GITHUB_ENV"
           echo "Stall threshold: ${HOURS}h"
 
       - name: Configure AWS credentials for vault access
@@ -116,7 +130,7 @@ jobs:
           # is the stalled state the ticket asks this watchdog to catch, and it
           # was the one state it could not see.
           aws dynamodb scan \
-            --table-name "${TABLE_NAME}" \
+            --table-name "${MP_TABLE_NAME}" \
             --region "${AWS_REGION}" \
             --filter-expression 'testStatus IN (:testing, :completed, :dispatched)' \
             --expression-attribute-values '{":testing":{"S":"testing"},":completed":{"S":"completed"},":dispatched":{"S":"production_dispatched"}}' \
@@ -172,7 +186,7 @@ jobs:
           ' scan.json > waiting.tsv
 
           STALLED=0
-          CUTOFF=$(( $(date -u +%s) - STALL_HOURS * 3600 ))
+          CUTOFF=$(( $(date -u +%s) - MP_STALL_HOURS * 3600 ))
 
           while IFS=$'\t' read -r TAG CHANGESET COMPLETED STATUS; do
             # Belt and braces: the jq above should never emit an empty field,
@@ -199,7 +213,7 @@ jobs:
               echo "❌ ${TAG} (${CHANGESET}, ${STATUS}): waiting ${AGE_HOURS}h for production release"
               STALLED=$((STALLED + 1))
             else
-              echo "⏳ ${TAG} (${CHANGESET}, ${STATUS}): waiting ${AGE_HOURS}h, still inside the ${STALL_HOURS}h window"
+              echo "⏳ ${TAG} (${CHANGESET}, ${STATUS}): waiting ${AGE_HOURS}h, still inside the ${MP_STALL_HOURS}h window"
             fi
           done < waiting.tsv
 
@@ -221,13 +235,13 @@ jobs:
 
           aws marketplace-catalog describe-entity \
             --catalog AWSMarketplace \
-            --entity-id "${PRODUCT_ID}" \
+            --entity-id "${MP_PRODUCT_ID}" \
             --region "${AWS_REGION}" \
             --output json > entity.json
 
           # Every imageTag the poller knows about, whatever its state.
           aws dynamodb scan \
-            --table-name "${TABLE_NAME}" \
+            --table-name "${MP_TABLE_NAME}" \
             --region "${AWS_REGION}" \
             --projection-expression 'imageTag' \
             --output json > tracked.json
@@ -245,7 +259,7 @@ jobs:
           ' entity.json > public_test_versions.tsv
 
           ORPHANED=0
-          CUTOFF=$(( $(date -u +%s) - STALL_HOURS * 3600 ))
+          CUTOFF=$(( $(date -u +%s) - MP_STALL_HOURS * 3600 ))
           # Ignore ancient history; this is about recent releases going missing.
           FLOOR=$(( $(date -u +%s) - 30 * 86400 ))
 
@@ -304,7 +318,7 @@ jobs:
           {
             echo "## Marketplace release watchdog"
             echo ""
-            echo "Awaiting release: ${AWAITING}. Stalled beyond ${STALL_HOURS}h: ${STALLED}."
+            echo "Awaiting release: ${AWAITING}. Stalled beyond ${MP_STALL_HOURS}h: ${STALLED}."
             echo "Published but never tracked by the poller: ${ORPHANED}."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -332,7 +346,7 @@ jobs:
               echo "Check the PollMarketplaceChangeSetStatus logs and the change sets on the listing."
             } >> "$GITHUB_STEP_SUMMARY"
 
-            echo "::error::${STALLED} marketplace release(s) stalled for more than ${STALL_HOURS}h."
+            echo "::error::${STALLED} marketplace release(s) stalled for more than ${MP_STALL_HOURS}h."
           fi
 
           if [ "${STALLED}" -gt 0 ] || [ "${ORPHANED}" -gt 0 ]; then
