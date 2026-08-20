@@ -80,6 +80,19 @@ these can be set on the function without fighting a Terraform run.
 
 Reaching a cap is logged, never passed over silently.
 
+## 🔀 What each pass does when something goes wrong
+
+The happy path is above. These are the branches that exist because getting them
+wrong is how a release stalls without saying so.
+
+| Situation | Behaviour | Why |
+|---|---|---|
+| Pass 1 finds a restriction that **succeeded or is still applying** | Skip; the image is already validated | A restriction is only submitted after the ECS tests pass, so its existence in any non-failed state proves validation happened |
+| Pass 1 finds a restriction that **FAILED or was CANCELLED** | Dispatch validation again | The version is still Public and unvalidated. Filing it as "already restricted" wrote a row with an `imageTag` and no `testStatus`, which the watchdog's stall scan cannot match and its orphan scan skips: a permanent silent stall |
+| Pass 1 **cannot dispatch** the validation workflow | Leave the change set unprocessed, log an error | Recording it made `is_changeset_processed()` true forever, so one transient GitHub API failure retired the version permanently. Unprocessed means the next 15-minute cycle retries, and a tag that never becomes tracked is what the watchdog's orphan scan reports |
+| Pass 2 finds a restriction that **FAILED or was CANCELLED** | Do not release; leave the row at `completed` | The row stays visible to the watchdog so somebody is told it needs a resubmit, rather than waiting forever on a dead restriction |
+| Pass 2 dispatches a release | Record `production_dispatched`, not released | A 204 from the dispatch API is not a release; the run can still fail at the Docker push or the validated-version gate. The row is promoted only once the listing proves the version is Public |
+
 ## 🏷️ Tag selection
 
 Pass 1 only adopts titles that **start with** `test-`. That is a prefix and not a
