@@ -39,6 +39,18 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+      # Check late in the day, because every recent liquibase-secure image has
+      # been published to Docker Hub in the afternoon or evening UTC:
+      #
+      #   5.1.1  15:34   5.2.0  20:13   5.2.1  15:10   5.2.2  14:33
+      #
+      # Unpinned, this ecosystem ran at 12:22 UTC, so the check on publication
+      # day was always too early and the bump could not appear before the next
+      # weekday at the earliest. 22:00 clears the latest of those four by nearly
+      # two hours. Note `daily` skips weekends, so a Friday evening publish
+      # still waits for Monday; this removes the guaranteed same-day miss, not
+      # every source of delay.
+      time: "22:00"
     pull-request-branch-name:
       separator: "-"
     labels: ["sdou"]
