@@ -286,6 +286,7 @@ breaks when the dispatch runs ahead of the merge.
    ```
 4. Do not trust a green deploy run on its own. Grep its log for `buildx failed`: a push to an existing immutable ECR tag fails the push, and the run used to report success anyway.
 5. AWS rejects simultaneous change sets on one product. If a submission failed, check whether another change set was in flight at the time.
+6. A poller log line `Failed to trigger workflow: ... 422` means GitHub refused the dispatch and no run was created, so the Actions tab shows nothing. A required `workflow_dispatch` input the poller does not send causes exactly this; it stalled 6.0.0 until `image_tag` was made optional.
 
 ### :hammer: (If required) Manually test liquibase commands with the Marketplace listing
 

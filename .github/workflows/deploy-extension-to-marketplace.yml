@@ -19,8 +19,11 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Test Image tag for the ECR liquibase/liquibaseSecure. QA-use e.g `qa-<version>`
-        required: true
+        description: 'Test image tag for the ECR liquibase/liquibaseSecure, required for a dry run. QA-use e.g `qa-<version>`. Ignored when dry_run is false.'
+        # Not required: the poller's production dispatch sends only
+        # validated_version, and GitHub rejects a dispatch missing a required
+        # input with a 422, which stalled the 6.0.0 release.
+        required: false
         default: ''
       # Deliberately separate from image_tag. image_tag is an ECR tag to build
       # and the dry-run job uses it that way; this is a bare liquibase-secure
@@ -108,6 +111,17 @@ jobs:
     env:
       AWS_REGION: us-east-1
     steps:
+      # image_tag is optional at the input level so the production dispatch is
+      # accepted, but this job builds and submits it, so fail before any work.
+      - name: Require image_tag for a dry run
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if [ -z "${IMAGE_TAG}" ]; then
+            echo "::error::image_tag is required when dry_run is true."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -231,7 +245,7 @@ jobs:
 
           # This job builds and submits whatever version the Dockerfile on main
           # says, which is not necessarily the version that was validated. The
-          # poller dispatches the validated version as image_tag so the two can
+          # poller dispatches the validated version as validated_version so the two can
           # be compared here. A mismatch means main moved between validation and
           # release, and publishing would ship a version nobody tested. Public
           # marketplace versions cannot be deleted, only restricted, so this
