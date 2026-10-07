@@ -129,8 +129,8 @@ is stripped. Tags predating this scheme still resolve, so `test-5.2.2` yields
 │ - Verifies restriction Status=SUCCEEDED. FAILED and CANCELLED are terminal:   │
 │   it reports and stops rather than waiting on a change set that is done       │
 │ - Triggers deploy-extension-to-marketplace.yml with dry_run=false and         │
-│   validated_version=<version>, NOT image_tag: that input is the ECR tag to    │
-│   build, and the manual release path still uses it that way                   │
+│   validated_version=<version>, NOT image_tag: that input is only the dry      │
+│   run's test-/qa- ECR tag and a production run ignores it                     │
 │ - Updates DynamoDB: TestStatus=production_dispatched                          │
 │ - A later cycle promotes it to production_released, but only once the version │
 │   is actually Public on the listing. A dispatch GitHub accepted is not a      │

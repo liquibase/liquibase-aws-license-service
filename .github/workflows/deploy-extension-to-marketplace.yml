@@ -11,34 +11,38 @@ name: Docker Build and Push to AWS Marketplace
 # - dry_run=true: Builds test image (e.g., test-5.0.2) for validation before production
 # - dry_run=false: Builds production image (uses version from Dockerfile) for public release
 
+# Production gets its own group: GitHub keeps one pending run per group and
+# cancels it when another dispatch arrives, so a dry run queued behind a waiting
+# production run would drop that release without a trace.
 concurrency:
-  group: deploy-to-marketplace
+  group: deploy-to-marketplace-${{ inputs.dry_run && 'dry-run' || 'production' }}
   cancel-in-progress: false
 
 on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Test image tag for the ECR liquibase/liquibaseSecure, required for a dry run. QA-use e.g `qa-<version>`. Ignored when dry_run is false.'
+        description: 'Test image tag for the ECR liquibase/liquibaseSecure, required for a dry run and must start with `test-` or `qa-` (QA-use e.g `qa-<version>`). Ignored when dry_run is false.'
         # Not required: the poller's production dispatch sends only
         # validated_version, and GitHub rejects a dispatch missing a required
         # input with a 422, which stalled the 6.0.0 release.
         required: false
         default: ''
-      # Deliberately separate from image_tag. image_tag is an ECR tag to build
-      # and the dry-run job uses it that way; this is a bare liquibase-secure
-      # version that already passed ECS validation. Overloading one input to
-      # mean both would make a manual production dispatch fail for anyone who
-      # filled image_tag in as its own description instructs.
+      # Deliberately separate from image_tag. image_tag is the prefixed ECR tag
+      # the dry-run job builds; this is a bare liquibase-secure version that
+      # already passed ECS validation, and the production job compares it with
+      # the Dockerfile.
       validated_version:
         description: 'Set by the marketplace poller: the liquibase-secure version that passed ECS validation. Leave empty to release whatever is on main.'
         required: false
         default: ''
       dry_run:
-        description: 'Run this as a dry run.'
+        # Defaults to true so a manual Run workflow with the defaults cannot
+        # publish a public version; the poller and auto-trigger set it explicitly.
+        description: 'Run this as a dry run. Uncheck only to publish a public marketplace version.'
         required: false
         type: boolean
-        default: false
+        default: true
 
 jobs:
 #  https://datical.atlassian.net/browse/DAT-18638
@@ -49,6 +53,19 @@ jobs:
     outputs:
       SECURE_VERSION_MATCH: ${{ steps.check_versions.outputs.versions_match }}
     steps:
+      # image_tag is optional at the input level so the production dispatch is
+      # accepted. A bare version would push the immutable release tag to ECR and
+      # submit it as public, breaking the real release, so require the prefix.
+      - name: Require a test- or qa- image_tag for a dry run
+        if: ${{ inputs.dry_run }}
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if [[ ! "${IMAGE_TAG}" =~ ^(test|qa)- ]]; then
+            echo "::error::A dry run needs an image_tag starting with test- or qa-, got '${IMAGE_TAG}'."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -99,7 +116,7 @@ jobs:
           echo "✅ Versions match: ${POM_VERSION}"
 
   dry-run:
-    # run this job for dry_run or when it is a repository_dispatch event
+    # run this job for a dry run (auto-trigger's test- image, or a manual qa- image)
     # for QA testing of the new version prior to submitting to AWS Marketplace for approval please use qa-<version> as image_tag
     if: ${{ inputs.dry_run == true }}
     runs-on:
@@ -111,17 +128,6 @@ jobs:
     env:
       AWS_REGION: us-east-1
     steps:
-      # image_tag is optional at the input level so the production dispatch is
-      # accepted, but this job builds and submits it, so fail before any work.
-      - name: Require image_tag for a dry run
-        env:
-          IMAGE_TAG: ${{ inputs.image_tag }}
-        run: |
-          if [ -z "${IMAGE_TAG}" ]; then
-            echo "::error::image_tag is required when dry_run is true."
-            exit 1
-          fi
-
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -169,8 +175,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           provenance: false # Disables the generation of provenance attestation
-          # the tags can be either from input or test_tag
-          tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag || env.test_tag }}
+          tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
 
       # No continue-on-error here. It used to swallow a failed push and let the
       # next step submit a marketplace version pointing at whatever image was
@@ -181,7 +186,7 @@ jobs:
       - name: Submit New Version Request for AWS MP Listing
         env:
           ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
-          IMAGE_TAG: "${{ github.event.inputs.image_tag }}"
+          IMAGE_TAG: "${{ inputs.image_tag }}"
           PRODUCT_ID: ${{ env.PRODUCT_ID }}
           AWS_MP_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
         run: |
@@ -252,10 +257,8 @@ jobs:
           # fails instead.
           #
           # validated_version is empty for manual dispatches that intend "just
-          # release what is on main"; those skip the check rather than fail. It
-          # is never image_tag: that input is the ECR tag to build, so reading
-          # it here would reject a hand-filled `qa-5.2.2` as an unvalidated
-          # version and block the manual release path entirely.
+          # release what is on main"; those skip the check rather than fail.
+          # This job ignores image_tag, which is the dry run's prefixed ECR tag.
           - name: Verify the Dockerfile matches the validated version
             env:
               VALIDATED_VERSION: "${{ inputs.validated_version }}"

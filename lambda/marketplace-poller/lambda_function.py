@@ -172,10 +172,9 @@ def trigger_github_workflow(workflow, image_tag=None, dry_run=None, validated_ve
     """Dispatch a GitHub Actions workflow on main.
 
     image_tag and validated_version are deliberately separate inputs.
-    deploy-extension-to-marketplace.yml documents image_tag as the ECR tag to
-    build (`qa-<version>`) and its dry-run job uses it that way, so overloading
-    it to mean "the version that passed validation" would break the manual
-    release path an operator reaches for when this poller is not working.
+    deploy-extension-to-marketplace.yml uses image_tag only as the dry run's
+    prefixed ECR tag (`test-`/`qa-`) and ignores it on a production run, which
+    compares validated_version, a bare version, against the Dockerfile.
     """
     github_token = get_github_token()
 
