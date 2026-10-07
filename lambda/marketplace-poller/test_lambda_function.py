@@ -9,6 +9,7 @@ Reference change sets (product prod-l2panlvbozc5e):
   5yb1p6ojdo2aet2sse0jjfby1  AddDeliveryOptions       published test-5.2.2
 """
 
+import json
 import os
 import sys
 import unittest
@@ -811,9 +812,29 @@ class ContractWithRepoTest(unittest.TestCase):
 
         self.assertIn('validated_version', declared)
         self.assertIn('dry_run', declared)
-        # image_tag must survive too: the dry-run job and the manual release
-        # path both still use it as the ECR tag.
+        # image_tag must survive too: the dry-run job builds it as the ECR tag.
         self.assertIn('image_tag', declared)
+
+    def test_deploy_workflow_requires_only_inputs_the_poller_sends(self):
+        """A required input the poller omits gets the dispatch a 422 and no run,
+        which is what stalled 6.0.0. Checks the payload actually put on the wire."""
+        with open(self.repo_file('.github', 'workflows', 'deploy-extension-to-marketplace.yml')) as handle:
+            workflow = yaml.safe_load(handle)
+        triggers = workflow.get('on', workflow.get(True, {}))
+        inputs = triggers['workflow_dispatch']['inputs']
+        required = {name for name, spec in inputs.items() if spec.get('required')}
+
+        with patch.object(lf, 'get_completed_tests', return_value=[{'changeSetId': 'cs1', 'imageTag': TEST_TAG}]), \
+             patch.object(lf, 'find_restriction_changeset', return_value={'ChangeSetId': 'r', 'Status': 'SUCCEEDED'}), \
+             patch.object(lf, 'update_test_status'), \
+             patch.object(lf, 'get_github_token', return_value='t'), \
+             patch.object(lf.http, 'request', return_value=MagicMock(status=204)) as request:
+            lf.release_validated_versions()
+
+        sent = set(json.loads(request.call_args.kwargs['body'])['inputs'])
+        self.assertLessEqual(required, sent, f"required inputs the poller never sends: {required - sent}")
+        # A manual Run workflow with the defaults must not publish a public version.
+        self.assertIs(inputs['dry_run']['default'], True)
 
     def test_poller_sends_the_version_as_validated_version_not_image_tag(self):
         """image_tag means "ECR tag to build" everywhere else in that workflow."""

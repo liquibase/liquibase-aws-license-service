@@ -23,6 +23,9 @@ on:
       # The Lambda must keep matching the change type this script submits, and a
       # test asserts exactly that. Run it when either side moves.
       - '.github/utils/restrict-aws-mp-listing.sh'
+      # Tests also assert the inputs these workflows declare and the tag they generate.
+      - '.github/workflows/deploy-extension-to-marketplace.yml'
+      - '.github/workflows/auto-trigger-marketplace-deployment.yml'
   push:
     branches:
       - main
