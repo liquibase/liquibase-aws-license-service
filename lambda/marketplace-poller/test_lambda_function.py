@@ -432,9 +432,10 @@ class ProductionReleaseTest(unittest.TestCase):
         #
         # It travels as validated_version, not image_tag: image_tag is the ECR
         # tag to build, which is what the dry-run job and the input's own
-        # description mean by it.
+        # description mean by it. The test tag goes as tested_image_tag, the
+        # exact image production publishes instead of rebuilding.
         trigger.assert_called_once_with(
-            lf.GITHUB_WORKFLOW_PROD, validated_version='5.2.2', dry_run=False
+            lf.GITHUB_WORKFLOW_PROD, validated_version='5.2.2', tested_image_tag=TEST_TAG, dry_run=False
         )
         # Dispatched, not released. A 204 only says GitHub accepted the run.
         update.assert_called_once_with('cs1', 'production_dispatched')
@@ -450,7 +451,7 @@ class ProductionReleaseTest(unittest.TestCase):
             lf.release_validated_versions()
 
         trigger.assert_called_once_with(
-            lf.GITHUB_WORKFLOW_PROD, validated_version='5.2.2', dry_run=False
+            lf.GITHUB_WORKFLOW_PROD, validated_version='5.2.2', tested_image_tag='test-5.2.2-482.1', dry_run=False
         )
 
     @patch.object(lf, 'trigger_github_workflow')
@@ -814,6 +815,8 @@ class ContractWithRepoTest(unittest.TestCase):
         self.assertIn('dry_run', declared)
         # image_tag must survive too: the dry-run job builds it as the ECR tag.
         self.assertIn('image_tag', declared)
+        # The production job publishes this exact image instead of rebuilding.
+        self.assertIn('tested_image_tag', declared)
 
     def test_deploy_workflow_requires_only_inputs_the_poller_sends(self):
         """A required input the poller omits gets the dispatch a 422 and no run,
@@ -831,8 +834,11 @@ class ContractWithRepoTest(unittest.TestCase):
              patch.object(lf.http, 'request', return_value=MagicMock(status=204)) as request:
             lf.release_validated_versions()
 
-        sent = set(json.loads(request.call_args.kwargs['body'])['inputs'])
+        sent_inputs = json.loads(request.call_args.kwargs['body'])['inputs']
+        sent = set(sent_inputs)
         self.assertLessEqual(required, sent, f"required inputs the poller never sends: {required - sent}")
+        # Without the tested tag the production job refuses to run, since it no longer rebuilds.
+        self.assertEqual(sent_inputs['tested_image_tag'], TEST_TAG)
         # A manual Run workflow with the defaults must not publish a public version.
         self.assertIs(inputs['dry_run']['default'], True)
 

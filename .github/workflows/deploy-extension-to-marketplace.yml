@@ -9,7 +9,7 @@ name: Docker Build and Push to AWS Marketplace
 #
 # Modes:
 # - dry_run=true: Builds test image (e.g., test-5.0.2) for validation before production
-# - dry_run=false: Builds production image (uses version from Dockerfile) for public release
+# - dry_run=false: Publishes the validated test image (tested_image_tag) under the Dockerfile version, without rebuilding
 
 # Production gets its own group: GitHub keeps one pending run per group and
 # cancels it when another dispatch arrives, so a dry run queued behind a waiting
@@ -34,6 +34,11 @@ on:
       # the Dockerfile.
       validated_version:
         description: 'Set by the marketplace poller: the liquibase-secure version that passed ECS validation. Leave empty to release whatever is on main.'
+        required: false
+        default: ''
+      # A rebuild is never the image that was tested, so production copies this one instead.
+      tested_image_tag:
+        description: 'Required when dry_run is false: the test- image tag that passed ECS validation. That exact image is published under the Dockerfile version.'
         required: false
         default: ''
       dry_run:
@@ -228,12 +233,6 @@ jobs:
               role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
               aws-region: us-east-1
 
-          - name: Set up QEMU
-            uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-
-          - name: Set up Docker Buildx
-            uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
           - name: Login to ECR Registry
             uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
             with:
@@ -248,7 +247,7 @@ jobs:
               echo "LATEST_TAG=$LATEST_TAG"
               echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-          # This job builds and submits whatever version the Dockerfile on main
+          # This job publishes under whatever version the Dockerfile on main
           # says, which is not necessarily the version that was validated. The
           # poller dispatches the validated version as validated_version so the two can
           # be compared here. A mismatch means main moved between validation and
@@ -276,22 +275,57 @@ jobs:
 
               echo "✅ Dockerfile version ${DOCKERFILE_VERSION} matches the validated version."
 
-          - name: Build and Push Docker Image
+          # Same rule as the poller's released_version: test-<version> or test-<version>-<run>.<attempt>.
+          - name: Verify the tested image belongs to this version
             env:
-              ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
-            uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-            with:
-              context: .
-              file: Dockerfile
-              no-cache: true
-              push: true
-              platforms: linux/amd64,linux/arm64
-              provenance: false # Disables the generation of provenance attestation
-              tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
+              TESTED_IMAGE_TAG: "${{ inputs.tested_image_tag }}"
+              VERSION: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
+            run: |
+              if [ -z "${TESTED_IMAGE_TAG}" ]; then
+                echo "::error::A production release needs tested_image_tag. It publishes the image that passed validation and never rebuilds."
+                exit 1
+              fi
+              if [[ ! "${TESTED_IMAGE_TAG}" =~ ^test-${VERSION//./\\.}(-[0-9]+\.[0-9]+)?$ ]]; then
+                echo "::error::'${TESTED_IMAGE_TAG}' is not a test image of ${VERSION}. Refusing to publish it as ${VERSION}."
+                exit 1
+              fi
+              echo "✅ ${TESTED_IMAGE_TAG} is a test image of ${VERSION}."
 
-          # No continue-on-error here, for the same reason as the dry-run job.
-          # On this path the consequence is worse: a masked push failure would
-          # submit a PUBLIC version describing an image that was never pushed.
+          # ECR tags here are immutable, so the copy must preserve the digest or fail before the tag exists.
+          - name: Publish the tested image under the release version
+            env:
+              REPO: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+              TESTED_IMAGE_TAG: "${{ inputs.tested_image_tag }}"
+              VERSION: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
+            run: |
+              # Hashes the raw manifest bytes via a file, since $(...) would strip a trailing newline.
+              digest() {
+                skopeo inspect --raw "docker://$1" > manifest.json || return 1
+                echo "sha256:$(sha256sum < manifest.json | cut -d' ' -f1)"
+              }
+
+              TESTED_DIGEST=$(digest "${REPO}:${TESTED_IMAGE_TAG}")
+              echo "Tested image ${TESTED_IMAGE_TAG} is ${TESTED_DIGEST}"
+
+              if skopeo inspect --raw "docker://${REPO}:${VERSION}" >/dev/null 2>&1; then
+                EXISTING_DIGEST=$(digest "${REPO}:${VERSION}")
+                if [ "${EXISTING_DIGEST}" != "${TESTED_DIGEST}" ]; then
+                  echo "::error::${VERSION} already exists as ${EXISTING_DIGEST}, not the tested ${TESTED_DIGEST}. Refusing to submit it."
+                  exit 1
+                fi
+                echo "${VERSION} already points at the tested image; nothing to copy."
+                exit 0
+              fi
+
+              skopeo --insecure-policy copy --all --preserve-digests \
+                "docker://${REPO}@${TESTED_DIGEST}" "docker://${REPO}:${VERSION}"
+
+              PUBLISHED_DIGEST=$(digest "${REPO}:${VERSION}")
+              if [ "${PUBLISHED_DIGEST}" != "${TESTED_DIGEST}" ]; then
+                echo "::error::${VERSION} resolved to ${PUBLISHED_DIGEST} after the copy, not the tested ${TESTED_DIGEST}."
+                exit 1
+              fi
+              echo "✅ ${VERSION} is the tested image ${TESTED_DIGEST}."
 
           - name: Submit Request for AWS MP Listing
             env:
