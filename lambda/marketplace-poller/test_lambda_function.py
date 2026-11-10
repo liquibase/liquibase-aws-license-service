@@ -11,6 +11,7 @@ Reference change sets (product prod-l2panlvbozc5e):
 
 import json
 import os
+import subprocess
 import sys
 import unittest
 
@@ -841,6 +842,35 @@ class ContractWithRepoTest(unittest.TestCase):
         self.assertEqual(sent_inputs['tested_image_tag'], TEST_TAG)
         # A manual Run workflow with the defaults must not publish a public version.
         self.assertIs(inputs['dry_run']['default'], True)
+
+    def test_workflow_tag_check_accepts_what_released_version_strips(self):
+        """A tag the poller releases but the workflow rejects leaves the row stuck at production_dispatched."""
+        with open(self.repo_file('.github', 'workflows', 'deploy-extension-to-marketplace.yml')) as handle:
+            workflow = yaml.safe_load(handle)
+        step = next(
+            s for s in workflow['jobs']['publish']['steps']
+            if s.get('name') == 'Verify the tested image belongs to this version'
+        )
+
+        def accepted(tag, version):
+            env = {**os.environ, 'TESTED_IMAGE_TAG': tag, 'VERSION': version}
+            return subprocess.run(['bash', '-e', '-c', step['run']], env=env, capture_output=True).returncode == 0
+
+        for tag in ('test-5.2.2', 'test-5.2.2-482', 'test-5.2.2-482.1', 'test-5.2.2-beta-482.1'):
+            with self.subTest(tag=tag):
+                self.assertTrue(accepted(tag, lf.released_version(tag)))
+
+        for tag, version in (
+            ('', '5.2.2'),
+            ('5.2.2', '5.2.2'),
+            ('test-5.2.3-482.1', '5.2.2'),
+            ('test-5x2x2-482.1', '5.2.2'),
+            ('test-5.2.2-beta-482.1', '5.2.2'),
+            ('test-5.2.2-482.1.1', '5.2.2'),
+            ('qa-5.2.2', '5.2.2'),
+        ):
+            with self.subTest(tag=tag, version=version):
+                self.assertFalse(accepted(tag, version))
 
     def test_poller_sends_the_version_as_validated_version_not_image_tag(self):
         """image_tag means "ECR tag to build" everywhere else in that workflow."""

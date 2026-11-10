@@ -23,9 +23,9 @@ on:
     inputs:
       image_tag:
         description: 'Test image tag for the ECR liquibase/liquibaseSecure, required for a dry run and must start with `test-` or `qa-` (QA-use e.g `qa-<version>`). Ignored when dry_run is false.'
-        # Not required: the poller's production dispatch sends only
-        # validated_version, and GitHub rejects a dispatch missing a required
-        # input with a 422, which stalled the 6.0.0 release.
+        # Not required: the poller's production dispatch does not send it, and
+        # GitHub rejects a dispatch missing a required input with a 422, which
+        # stalled the 6.0.0 release.
         required: false
         default: ''
       # Deliberately separate from image_tag. image_tag is the prefixed ECR tag
@@ -33,7 +33,7 @@ on:
       # already passed ECS validation, and the production job compares it with
       # the Dockerfile.
       validated_version:
-        description: 'Set by the marketplace poller: the liquibase-secure version that passed ECS validation. Leave empty to release whatever is on main.'
+        description: 'Set by the marketplace poller: the liquibase-secure version that passed ECS validation. Optional for a manual production release, which still needs tested_image_tag.'
         required: false
         default: ''
       # A rebuild is never the image that was tested, so production copies this one instead.
@@ -198,8 +198,8 @@ jobs:
           chmod +x ./.github/utils/submit-aws-mp-listing.sh
           ./.github/utils/submit-aws-mp-listing.sh
           
-  build:
-      # submit a new version to AWS Marketplace that will be reviewed by AWS
+  publish:
+      # Publishes the tested image under the release version and submits it to AWS Marketplace for review
       if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
       runs-on:
           ubuntu-latest
@@ -255,8 +255,8 @@ jobs:
           # marketplace versions cannot be deleted, only restricted, so this
           # fails instead.
           #
-          # validated_version is empty for manual dispatches that intend "just
-          # release what is on main"; those skip the check rather than fail.
+          # validated_version may be empty on a manual dispatch; tested_image_tag
+          # is still required and checked below.
           # This job ignores image_tag, which is the dry run's prefixed ECR tag.
           - name: Verify the Dockerfile matches the validated version
             env:
@@ -275,7 +275,7 @@ jobs:
 
               echo "✅ Dockerfile version ${DOCKERFILE_VERSION} matches the validated version."
 
-          # Same rule as the poller's released_version: test-<version> or test-<version>-<run>.<attempt>.
+          # Accepts test-<version>, test-<version>-<run> and test-<version>-<run>.<attempt>, the suffixes released_version strips.
           - name: Verify the tested image belongs to this version
             env:
               TESTED_IMAGE_TAG: "${{ inputs.tested_image_tag }}"
@@ -285,11 +285,51 @@ jobs:
                 echo "::error::A production release needs tested_image_tag. It publishes the image that passed validation and never rebuilds."
                 exit 1
               fi
-              if [[ ! "${TESTED_IMAGE_TAG}" =~ ^test-${VERSION//./\\.}(-[0-9]+\.[0-9]+)?$ ]]; then
+              if [[ ! "${TESTED_IMAGE_TAG}" =~ ^test-${VERSION//./\\.}(-[0-9]+(\.[0-9]+)?)?$ ]]; then
                 echo "::error::'${TESTED_IMAGE_TAG}' is not a test image of ${VERSION}. Refusing to publish it as ${VERSION}."
                 exit 1
               fi
               echo "✅ ${TESTED_IMAGE_TAG} is a test image of ${VERSION}."
+
+          # completed is written only after the ECS tests pass; on_hold and every other state is refused.
+          - name: Verify the tested image passed the ECS tests
+            env:
+              TESTED_IMAGE_TAG: "${{ inputs.tested_image_tag }}"
+            run: |
+              STATUSES=$(aws dynamodb scan --region "${AWS_REGION}" \
+                --table-name liquibase-secure-marketplace-changesets \
+                --filter-expression "imageTag = :t" \
+                --expression-attribute-values '{":t":{"S":"'"${TESTED_IMAGE_TAG}"'"}}' \
+                --projection-expression testStatus \
+                --query 'Items[].testStatus.S' --output text)
+              echo "testStatus for ${TESTED_IMAGE_TAG}: '${STATUSES}'"
+              if ! grep -qwE 'completed|production_dispatched|production_released' <<< "${STATUSES}"; then
+                echo "::error::${TESTED_IMAGE_TAG} has no record of passing the ECS tests (testStatus '${STATUSES}'). Refusing to publish it."
+                exit 1
+              fi
+
+          # Restricted proves the restriction succeeded; already_listed lets a re-run skip a duplicate submit.
+          - name: Check the listing
+            id: listing
+            env:
+              TESTED_IMAGE_TAG: "${{ inputs.tested_image_tag }}"
+              VERSION: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
+            run: |
+              aws marketplace-catalog describe-entity --catalog AWSMarketplace --region "${AWS_REGION}" \
+                --entity-id "${PRODUCT_ID}" --query DetailsDocument --output json > entity.json
+              TESTED_VISIBILITY=$(jq -r --arg t "${TESTED_IMAGE_TAG}" \
+                '[.Versions[] | select(.VersionTitle == $t) | .DeliveryOptions[].Visibility] | unique | join(",")' entity.json)
+              echo "${TESTED_IMAGE_TAG} delivery options: '${TESTED_VISIBILITY}'"
+              if [ "${TESTED_VISIBILITY}" != "Restricted" ]; then
+                echo "::error::${TESTED_IMAGE_TAG} is not restricted on the listing ('${TESTED_VISIBILITY}'), so its validation never finished. Refusing to publish it."
+                exit 1
+              fi
+              if jq -e --arg v "${VERSION}" 'any(.Versions[]; .VersionTitle == $v)' entity.json > /dev/null; then
+                echo "::notice::${VERSION} is already on the listing; the submit step will be skipped."
+                echo "already_listed=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "already_listed=false" >> "$GITHUB_OUTPUT"
+              fi
 
           # ECR tags here are immutable, so the copy must preserve the digest or fail before the tag exists.
           - name: Publish the tested image under the release version
@@ -307,7 +347,8 @@ jobs:
               TESTED_DIGEST=$(digest "${REPO}:${TESTED_IMAGE_TAG}")
               echo "Tested image ${TESTED_IMAGE_TAG} is ${TESTED_DIGEST}"
 
-              if skopeo inspect --raw "docker://${REPO}:${VERSION}" >/dev/null 2>&1; then
+              # Only "manifest unknown" means the tag is free; any other error (auth, throttling) stops here.
+              if skopeo inspect --raw "docker://${REPO}:${VERSION}" > /dev/null 2> probe.err; then
                 EXISTING_DIGEST=$(digest "${REPO}:${VERSION}")
                 if [ "${EXISTING_DIGEST}" != "${TESTED_DIGEST}" ]; then
                   echo "::error::${VERSION} already exists as ${EXISTING_DIGEST}, not the tested ${TESTED_DIGEST}. Refusing to submit it."
@@ -315,7 +356,12 @@ jobs:
                 fi
                 echo "${VERSION} already points at the tested image; nothing to copy."
                 exit 0
+              elif ! grep -qi 'manifest unknown' probe.err; then
+                cat probe.err
+                echo "::error::Could not tell whether ${VERSION} exists. Not copying."
+                exit 1
               fi
+              echo "${VERSION} does not exist yet: $(cat probe.err)"
 
               skopeo --insecure-policy copy --all --preserve-digests \
                 "docker://${REPO}@${TESTED_DIGEST}" "docker://${REPO}:${VERSION}"
@@ -328,6 +374,7 @@ jobs:
               echo "✅ ${VERSION} is the tested image ${TESTED_DIGEST}."
 
           - name: Submit Request for AWS MP Listing
+            if: ${{ steps.listing.outputs.already_listed != 'true' }}
             env:
               ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
               IMAGE_TAG: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"

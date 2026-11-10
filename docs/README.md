@@ -181,7 +181,7 @@ is stripped. Tags predating this scheme still resolve, so `test-5.2.2` yields
 **Concurrency:** Uses a concurrency group (`deploy-to-marketplace`) to queue runs instead of running in parallel, preventing duplicate marketplace submissions
 **Modes:**
 - **dry_run=true**: Test image (auto-restricted after testing)
-- **dry_run=false**: Production release (publicly available). Requires `tested_image_tag` and copies that exact image to the version tag with its digest unchanged. It never rebuilds, because a rebuild is not the image that passed validation
+- **dry_run=false**: Production release (publicly available). Requires `tested_image_tag` and copies that exact image to the version tag with its digest unchanged. It never rebuilds, because a rebuild is not the image that passed validation. Before copying it refuses a tag whose DynamoDB row is not `completed`, `production_dispatched` or `production_released`, or whose test version is not `Restricted` on the listing. It skips the submit when the version is already on the listing, so a re-run stays green
 
 #### 5. AWS EventBridge + Lambda - Approval Detection
 **What it does:** Polls AWS Marketplace every 15 minutes to detect when test images are approved
@@ -284,7 +284,7 @@ breaks when the dispatch runs ahead of the merge.
      --filter-list '[{"Name":"EntityId","ValueList":["prod-l2panlvbozc5e"]}]' \
      --sort '{"SortBy":"StartTime","SortOrder":"DESCENDING"}' --max-results 5
    ```
-4. Do not trust a green deploy run on its own. Grep its log for `buildx failed`: a push to an existing immutable ECR tag fails the push, and the run used to report success anyway.
+4. Do not trust a green deploy run on its own. For a dry run, grep its log for `buildx failed`: a push to an existing immutable ECR tag fails the push, and the run used to report success anyway. A production run should log `✅ <version> is the tested image sha256:…`, or the notice that the version is already on the listing.
 5. AWS rejects simultaneous change sets on one product. If a submission failed, check whether another change set was in flight at the time.
 6. A poller log line `Failed to trigger workflow: ... 422` means GitHub refused the dispatch and no run was created, so the Actions tab shows nothing. A required `workflow_dispatch` input the poller does not send causes exactly this; it stalled 6.0.0 until `image_tag` was made optional.
 
