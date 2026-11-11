@@ -168,13 +168,15 @@ def update_test_status(changeset_id, test_status):
         print(f"Error updating test status: {str(e)}")
 
 
-def trigger_github_workflow(workflow, image_tag=None, dry_run=None, validated_version=None):
+def trigger_github_workflow(workflow, image_tag=None, dry_run=None, validated_version=None, tested_image_tag=None):
     """Dispatch a GitHub Actions workflow on main.
 
     image_tag and validated_version are deliberately separate inputs.
     deploy-extension-to-marketplace.yml uses image_tag only as the dry run's
     prefixed ECR tag (`test-`/`qa-`) and ignores it on a production run, which
     compares validated_version, a bare version, against the Dockerfile.
+    tested_image_tag names the validated test image a production run publishes
+    unchanged under that version.
     """
     github_token = get_github_token()
 
@@ -193,6 +195,8 @@ def trigger_github_workflow(workflow, image_tag=None, dry_run=None, validated_ve
         payload['inputs']['image_tag'] = image_tag
     if validated_version is not None:
         payload['inputs']['validated_version'] = validated_version
+    if tested_image_tag is not None:
+        payload['inputs']['tested_image_tag'] = tested_image_tag
     if dry_run is not None:
         payload['inputs']['dry_run'] = str(dry_run).lower()
 
@@ -613,10 +617,10 @@ def release_validated_versions():
         version = released_version(image_tag)
         print(f"🚀 Triggering production release for version {version}...")
 
-        # The production job builds and submits the version it reads from the
-        # Dockerfile on main, not the tag dispatched here. If main has moved on
-        # since this image was validated, that publishes a version nobody
-        # validated. Passing the validated version lets the workflow compare the
+        # The production job publishes image_tag itself, never a rebuild, and
+        # titles it with the version it reads from the Dockerfile on main. If
+        # main has moved on since this image was validated, that publishes a
+        # version nobody validated. Passing the validated version lets the workflow compare the
         # two and refuse rather than release the wrong one.
         #
         # It is deliberately the bare version, not image_tag: the production
@@ -629,7 +633,9 @@ def release_validated_versions():
         # would be invisible to this poller AND to the watchdog. The status is
         # promoted to production_released only once the version is actually
         # public on the listing (see confirm_dispatched_releases).
-        if trigger_github_workflow(GITHUB_WORKFLOW_PROD, validated_version=version, dry_run=False):
+        if trigger_github_workflow(
+            GITHUB_WORKFLOW_PROD, validated_version=version, tested_image_tag=image_tag, dry_run=False
+        ):
             update_test_status(changeset_id, 'production_dispatched')
             triggered += 1
             print(f"✅ Successfully dispatched production release for version {version}")

@@ -14,7 +14,7 @@ story told once, end to end, for anyone who just needs to know what to expect.
 5. **AWS takes roughly 30 to 45 minutes** to accept that hidden version. (The 5.2.2 submission took 42 minutes: change set `5yb1p6ojdo2aet2sse0jjfby1`, 12:24 to 13:06.)
 6. **The polling Lambda checks every 15 minutes.** When it sees the hidden version is live, it dispatches the ECS test suite against it.
 7. **Tests pass, so the hidden version is withdrawn** from the listing and the tracking table records that this one passed.
-8. **The Lambda sees the withdrawal and publishes X publicly.** This is the step that was broken: it looked for the wrong kind of record, and compared a label that kind of record never carries, so it never fired once. Every public version before this fix was dispatched by a human.
+8. **The Lambda sees the withdrawal and publishes X publicly.** It publishes the tested image itself under the title X, with the same digest, never a rebuild. A rebuild is a different image that nobody tested, and a public version title can never be reused, so a bad one could not be replaced under the same name. This is the step that was broken: it looked for the wrong kind of record, and compared a label that kind of record never carries, so it never fired once. Every public version before this fix was dispatched by a human.
 9. **The Lambda confirms the listing actually shows X publicly** before calling it done, rather than trusting that the publish request was accepted. A dispatch that GitHub accepts can still fail further down.
 10. **A watchdog sweeps every two hours.** Anything stuck part-way for more than two hours turns a run red so somebody finds out. Previously a stall was indistinguishable from an idle pipeline, which is how 5.2.2 sat unnoticed for 30 hours.
 
@@ -128,9 +128,9 @@ is stripped. Tags predating this scheme still resolve, so `test-5.2.2` yields
 │ - Finds the RestrictDeliveryOptions change set withdrawing those ids          │
 │ - Verifies restriction Status=SUCCEEDED. FAILED and CANCELLED are terminal:   │
 │   it reports and stops rather than waiting on a change set that is done       │
-│ - Triggers deploy-extension-to-marketplace.yml with dry_run=false and         │
-│   validated_version=<version>, NOT image_tag: that input is only the dry      │
-│   run's test-/qa- ECR tag and a production run ignores it                     │
+│ - Triggers deploy-extension-to-marketplace.yml with dry_run=false,            │
+│   validated_version=<version> and tested_image_tag=<the test- tag>. Not       │
+│   image_tag: that input is only the dry run's test-/qa- ECR tag               │
 │ - Updates DynamoDB: TestStatus=production_dispatched                          │
 │ - A later cycle promotes it to production_released, but only once the version │
 │   is actually Public on the listing. A dispatch GitHub accepted is not a      │
@@ -140,8 +140,8 @@ is stripped. Tags predating this scheme still resolve, so `test-5.2.2` yields
                          ↓
 ┌───────────────────────────────────────────────────────────────┐
 │ deploy-extension-to-marketplace.yml (dry_run=false)           │
-│ - Builds production Docker image (e.g., 5.0.2)                │
-│ - Pushes to AWS Marketplace for public release                │
+│ - Copies the tested image to the version tag (e.g., 5.0.2)    │
+│   with skopeo, digest preserved: no rebuild                   │
 │ - Creates production change set via AWS API                   │
 └────────────────────────┬──────────────────────────────────────┘
                          │
@@ -181,7 +181,7 @@ is stripped. Tags predating this scheme still resolve, so `test-5.2.2` yields
 **Concurrency:** Uses a concurrency group (`deploy-to-marketplace`) to queue runs instead of running in parallel, preventing duplicate marketplace submissions
 **Modes:**
 - **dry_run=true**: Test image (auto-restricted after testing)
-- **dry_run=false**: Production release (publicly available)
+- **dry_run=false**: Production release (publicly available). Requires `tested_image_tag` and copies that exact image to the version tag with its digest unchanged. It never rebuilds, because a rebuild is not the image that passed validation. Before copying it refuses a tag whose DynamoDB row is not `completed`, `production_dispatched` or `production_released`, or whose test version is not `Restricted` on the listing. It skips the submit when the version is already on the listing, so a re-run stays green
 
 #### 5. AWS EventBridge + Lambda - Approval Detection
 **What it does:** Polls AWS Marketplace every 15 minutes to detect when test images are approved
@@ -208,7 +208,7 @@ is stripped. Tags predating this scheme still resolve, so `test-5.2.2` yields
 - Scans DynamoDB for `testStatus = completed`
 - Maps the test image's version title to its delivery option ids via `DescribeEntity` on the product
 - Finds the `RestrictDeliveryOptions` change set that withdrew those ids and checks `Status = SUCCEEDED`
-- Triggers `deploy-extension-to-marketplace.yml` with `dry_run=false`
+- Triggers `deploy-extension-to-marketplace.yml` with `dry_run=false`, `validated_version` and `tested_image_tag`
 **Timing:** Triggers within 0-15 minutes after restriction completes
 
 **Why the id mapping:** a `RestrictDeliveryOptions` change set records only the delivery option ids it withdrew and carries no version title, so matching on a title cannot work. Getting this wrong is what stalled the 5.2.2 release for 30 hours: the lookup matched a change type that is never submitted and then compared a field that does not exist, so it always answered "not restricted yet" and the release never fired. `RESTRICTION_CHANGE_TYPE` in the Lambda must stay equal to the change type `.github/utils/restrict-aws-mp-listing.sh` submits; a test asserts it.
@@ -259,7 +259,7 @@ it as tracked and will not flag the same version from the other direction.
 | Restrict test image | ~15 min | AWS Marketplace |
 | Lambda detects restriction complete | 0-15 min | EventBridge + Lambda |
 | Trigger production release | ~5 sec | Lambda → GitHub API |
-| Deploy production image | ~5 min | GitHub Actions |
+| Publish the tested image under the version tag | ~1 min | GitHub Actions |
 | AWS Marketplace prod approval | ~30 min | AWS |
 | **Total (test to production)** | **~2 hours** | Fully automated |
 | **Total (PR merge to public)** | **~2 hours** | Fully automated |
@@ -284,7 +284,7 @@ breaks when the dispatch runs ahead of the merge.
      --filter-list '[{"Name":"EntityId","ValueList":["prod-l2panlvbozc5e"]}]' \
      --sort '{"SortBy":"StartTime","SortOrder":"DESCENDING"}' --max-results 5
    ```
-4. Do not trust a green deploy run on its own. Grep its log for `buildx failed`: a push to an existing immutable ECR tag fails the push, and the run used to report success anyway.
+4. Do not trust a green deploy run on its own. For a dry run, grep its log for `buildx failed`: a push to an existing immutable ECR tag fails the push, and the run used to report success anyway. A production run should log `✅ <version> is the tested image sha256:…`, or the notice that the version is already on the listing.
 5. AWS rejects simultaneous change sets on one product. If a submission failed, check whether another change set was in flight at the time.
 6. A poller log line `Failed to trigger workflow: ... 422` means GitHub refused the dispatch and no run was created, so the Actions tab shows nothing. A required `workflow_dispatch` input the poller does not send causes exactly this; it stalled 6.0.0 until `image_tag` was made optional.
 
