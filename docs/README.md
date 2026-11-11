@@ -139,16 +139,19 @@ tracked, which happens when the poller is down longer than `LOOKBACK_DAYS`.
 
 ### ▶️ ECS tasks on the marketplace image
 
-Ask DevOps for access to the `LiquibaseAWSMP` account. Task definitions live in
-[`.github/task-definitions/`](../.github/task-definitions/) and run on the
-`aws-mp-test-cluster` Fargate cluster.
+Run
+[`run-task-definitions.yml`](https://github.com/liquibase/liquibase-aws-license-service/actions/workflows/run-task-definitions.yml)
+with `image_tag=<tag>`. It registers the `version-command` and
+`update-command-dynamodb` task definitions from
+[`.github/task-definitions/`](../.github/task-definitions/) with that exact image,
+runs them on the `aws-mp-test-cluster` Fargate cluster, and restricts the version
+when both pass. It only updates DynamoDB for `test-` tags, so it is safe on a `qa-` tag.
 
-```bash
-aws ecs run-task --cluster aws-mp-test-cluster --task-definition update-liquibase
-```
-
-From the console: **Tasks**, **Run new task**, pick the **Family**, then **Create**.
-Logs are on the task's **Logs** tab.
+To run a task by hand, ask DevOps for access to the `LiquibaseAWSMP` account.
+`run-task` with only a family name runs the latest revision, which may hold a
+different image, so pick the revision registered with your image. From the
+console: **Tasks**, **Run new task**, pick the **Family** and **Revision**, then
+**Create**. Logs are on the task's **Logs** tab.
 
 ![](./image/task_tab.png)
 ![](./image/run_task.png)
@@ -159,9 +162,18 @@ Logs are on the task's **Logs** tab.
 
 To put a build on the listing without releasing it, run
 [`deploy-extension-to-marketplace.yml`](https://github.com/liquibase/liquibase-aws-license-service/actions/workflows/deploy-extension-to-marketplace.yml)
-with `dry_run=true` and `image_tag=qa-<version>-<n>`. Restrict the version by
-hand once AWS approves it. Never use a `test-` tag for this: the poller would
-test it and release the version.
+with `dry_run=true` and `image_tag=qa-<version>-<n>`. Never use a `test-` tag for
+this: the poller would test it and release the version.
+
+Once AWS approves it, the QA version is **public** on the listing. The `qa-`
+prefix only keeps it out of the automation, so neither the poller nor the
+watchdog will restrict it or flag it. Restrict it yourself: run
+[`run-task-definitions.yml`](https://github.com/liquibase/liquibase-aws-license-service/actions/workflows/run-task-definitions.yml)
+with the `qa-` tag, which tests it and restricts it on success. If the tests fail,
+restrict it anyway with
+[`restrict-aws-mp-listing.sh`](../.github/utils/restrict-aws-mp-listing.sh)
+(`IMAGE_TAG`, `PRODUCT_ID` and `AWS_REGION` set), then confirm the version shows
+`Restricted` on the listing.
 
 ### 🐳 Local image
 
