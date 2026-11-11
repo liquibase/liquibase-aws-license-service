@@ -16,10 +16,78 @@ permissions:
 
 jobs:
   authorize:
-    environment: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && 'external' || 'internal' }}
+    environment: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'external' || 'internal' }}
     runs-on: ubuntu-latest
     steps:
       - run: "true"
+
+  # Advisory: reports (but no longer fails on) drift between this jar's amazon.aws.version
+  # and the AWS SDK in the Secure base image. Version-matching stopped being load-bearing
+  # once this jar's AWS SDK was relocated to a private package (TECHOPS-911), so two SDK
+  # copies can no longer collide regardless of version. Kept as a warning for hygiene /
+  # visibility. Previously this failed the build to prevent a NoSuchFieldError from a
+  # skewed classpath (TECHOPS-622); the relocation makes that impossible.
+  verify-amazon-aws-version:
+    needs: authorize
+    runs-on: ubuntu-latest
+    # Reads the private liquibase-pro repo via the vault PAT; skip on forks where
+    # the OIDC role / PAT are unavailable so external PRs are not blocked.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Configure AWS credentials for vault access
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Get secrets from vault
+        id: vault-secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
+        with:
+          secret-ids: |
+            ,/vault/liquibase
+          parse-json-secrets: true
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify amazon.aws.version matches the Secure image's shaded AWS SDK
+        env:
+          GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
+        run: |
+          set -euo pipefail
+          # The shaded AWS SDK is set by aws-sdk.version in the liquibase-pro ROOT pom
+          # (inherited by liquibase-aws-extension via its parent). Read it at the tag that
+          # matches the liquibase-secure version this repo builds against, NOT main — main
+          # drifts ahead of the released image. Property lives in the root pom, not the
+          # extension pom, and is named aws-sdk.version (not amazon.aws.version).
+          SECURE_VERSION=$(grep -oE '<liquibase-secure.version>[^<]+</liquibase-secure.version>' pom.xml \
+            | head -1 \
+            | sed -E 's/<\/?liquibase-secure.version>//g')
+          LOCAL=$(grep -oE '<amazon.aws.version>[^<]+</amazon.aws.version>' pom.xml \
+            | head -1 \
+            | sed -E 's/<\/?amazon.aws.version>//g')
+          # Tolerate an empty/failed read (unpublished v<version> tag, transient gh api
+          # failure, missing property) so the `if [ -z "$UPSTREAM" ]` guard below can print
+          # its descriptive ::error:: and exit 1. Without `|| true`, pipefail + set -e abort
+          # here with a bare non-zero exit and the descriptive message never shows.
+          UPSTREAM=$(gh api "repos/liquibase/liquibase-pro/contents/pom.xml?ref=v${SECURE_VERSION}" --jq '.content' 2>/dev/null \
+            | base64 -d \
+            | grep -oE '<aws-sdk.version>[^<]+</aws-sdk.version>' \
+            | head -1 \
+            | sed -E 's/<\/?aws-sdk.version>//g' || true)
+          echo "liquibase-secure version:                   ${SECURE_VERSION:-<empty>}"
+          echo "liquibase-pro v${SECURE_VERSION} aws-sdk.version (source of truth): ${UPSTREAM:-<empty>}"
+          echo "liquibase-aws-license-service (this repo):   ${LOCAL:-<empty>}"
+          # Advisory only: warn, never fail. The bundled AWS SDK is relocated, so a version
+          # difference here can no longer cause a runtime collision (TECHOPS-911).
+          if [ -z "$UPSTREAM" ]; then
+            echo "::warning::Could not read aws-sdk.version from liquibase-pro root pom at tag v${SECURE_VERSION}. Skipping drift comparison (advisory)."
+          elif [ "$UPSTREAM" != "$LOCAL" ]; then
+            echo "::warning::amazon.aws.version differs: this repo pins $LOCAL but liquibase-secure $SECURE_VERSION uses $UPSTREAM. Advisory only (bundled AWS SDK is relocated). Consider updating <amazon.aws.version> for hygiene."
+          else
+            echo "✅ amazon.aws.version is in sync with liquibase-secure $SECURE_VERSION at $LOCAL"
+          fi
 
   build-test:
     needs: authorize

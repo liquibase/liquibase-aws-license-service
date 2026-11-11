@@ -9,24 +9,45 @@ name: Docker Build and Push to AWS Marketplace
 #
 # Modes:
 # - dry_run=true: Builds test image (e.g., test-5.0.2) for validation before production
-# - dry_run=false: Builds production image (uses version from Dockerfile) for public release
+# - dry_run=false: Publishes the validated test image (tested_image_tag) under the Dockerfile version, without rebuilding
 
+# Production gets its own group: GitHub keeps one pending run per group and
+# cancels it when another dispatch arrives, so a dry run queued behind a waiting
+# production run would drop that release without a trace.
 concurrency:
-  group: deploy-to-marketplace
+  group: deploy-to-marketplace-${{ inputs.dry_run && 'dry-run' || 'production' }}
   cancel-in-progress: false
 
 on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Test Image tag for the ECR liquibase/liquibaseSecure. QA-use e.g `qa-<version>`
-        required: true
+        description: 'Test image tag for the ECR liquibase/liquibaseSecure, required for a dry run and must start with `test-` or `qa-` (QA-use e.g `qa-<version>`). Ignored when dry_run is false.'
+        # Not required: the poller's production dispatch does not send it, and
+        # GitHub rejects a dispatch missing a required input with a 422, which
+        # stalled the 6.0.0 release.
+        required: false
+        default: ''
+      # Deliberately separate from image_tag. image_tag is the prefixed ECR tag
+      # the dry-run job builds; this is a bare liquibase-secure version that
+      # already passed ECS validation, and the production job compares it with
+      # the Dockerfile.
+      validated_version:
+        description: 'Set by the marketplace poller: the liquibase-secure version that passed ECS validation. Optional for a manual production release, which still needs tested_image_tag.'
+        required: false
+        default: ''
+      # A rebuild is never the image that was tested, so production copies this one instead.
+      tested_image_tag:
+        description: 'Required when dry_run is false: the test- image tag that passed ECS validation. That exact image is published under the Dockerfile version.'
+        required: false
         default: ''
       dry_run:
-        description: 'Run this as a dry run.'
+        # Defaults to true so a manual Run workflow with the defaults cannot
+        # publish a public version; the poller and auto-trigger set it explicitly.
+        description: 'Run this as a dry run. Uncheck only to publish a public marketplace version.'
         required: false
         type: boolean
-        default: false
+        default: true
 
 jobs:
 #  https://datical.atlassian.net/browse/DAT-18638
@@ -37,6 +58,19 @@ jobs:
     outputs:
       SECURE_VERSION_MATCH: ${{ steps.check_versions.outputs.versions_match }}
     steps:
+      # image_tag is optional at the input level so the production dispatch is
+      # accepted. A bare version would push the immutable release tag to ECR and
+      # submit it as public, breaking the real release, so require the prefix.
+      - name: Require a test- or qa- image_tag for a dry run
+        if: ${{ inputs.dry_run }}
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if [[ ! "${IMAGE_TAG}" =~ ^(test|qa)- ]]; then
+            echo "::error::A dry run needs an image_tag starting with test- or qa-, got '${IMAGE_TAG}'."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -54,21 +88,40 @@ jobs:
           echo "Liquibase Secure version: $DOCKERFILE_LIQUIBASE_SECURE_VERSION"
           echo "dockerfile_liquibase_secure_version=$DOCKERFILE_LIQUIBASE_SECURE_VERSION" >> $GITHUB_OUTPUT
 
+      # The two versions are read from step outputs, NOT from bare shell variables.
+      # Writing to $GITHUB_OUTPUT does not export a value into a later step's
+      # environment, so the previous form compared two unset variables: "" == ""
+      # was always true and this gate could never fail. It let a run whose
+      # Dockerfile and pom disagreed proceed to submit a marketplace version.
       - name: Check if versions match
         id: check_versions
+        env:
+          POM_VERSION: ${{ steps.pom_liquibase_secure_version.outputs.pom_liquibase_secure_version }}
+          DOCKERFILE_VERSION: ${{ steps.dockerfile_liquibase_secure_version.outputs.dockerfile_liquibase_secure_version }}
         run: |
-          if [ "$POM_LIQUIBASE_SECURE_VERSION" == "$DOCKERFILE_LIQUIBASE_SECURE_VERSION" ]; then
-            echo "versions_match=true" >> $GITHUB_OUTPUT
-          else
-            echo "versions_match=false" >> $GITHUB_OUTPUT
+          echo "pom.xml:    '${POM_VERSION}'"
+          echo "Dockerfile: '${DOCKERFILE_VERSION}'"
+
+          # An empty value means the grep above stopped matching, e.g. after a
+          # Dockerfile or pom restructure. Treat it as a failure rather than
+          # letting two empty strings compare equal.
+          if [ -z "$POM_VERSION" ] || [ -z "$DOCKERFILE_VERSION" ]; then
+            echo "versions_match=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Could not read the liquibase-secure version from pom.xml ('${POM_VERSION}') and/or Dockerfile ('${DOCKERFILE_VERSION}'). Refusing to submit a marketplace version."
+            exit 1
           fi
 
-      - name: Output version match result
-        run: |
-          echo "versions_match is set to: ${{ steps.check_versions.outputs.versions_match }}"
+          if [ "$POM_VERSION" != "$DOCKERFILE_VERSION" ]; then
+            echo "versions_match=false" >> "$GITHUB_OUTPUT"
+            echo "::error::liquibase-secure version mismatch. Dockerfile: ${DOCKERFILE_VERSION}, pom.xml: ${POM_VERSION}. The image would be built from one version and labelled with another, so refusing to continue."
+            exit 1
+          fi
+
+          echo "versions_match=true" >> "$GITHUB_OUTPUT"
+          echo "✅ Versions match: ${POM_VERSION}"
 
   dry-run:
-    # run this job for dry_run or when it is a repository_dispatch event
+    # run this job for a dry run (auto-trigger's test- image, or a manual qa- image)
     # for QA testing of the new version prior to submitting to AWS Marketplace for approval please use qa-<version> as image_tag
     if: ${{ inputs.dry_run == true }}
     runs-on:
@@ -84,33 +137,33 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Configure AWS credentials for vault access
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: Get secrets from vault
         id: vault-secrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@2cb1a461cbd4865ac4299648312e4704c646cd53 # v3.0.1
+        uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
         with:
           secret-ids: |
             ,/vault/liquibase
           parse-json-secrets: true
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
           aws-region: us-east-1
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to ECR Registry
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ${{ env.AWS_MP_REGISTRY }}
           username: ${{ env.AWS_MP_ACCESS_KEY }}
@@ -119,7 +172,7 @@ jobs:
       - name: Build and Push Docker Image
         env:
           ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
@@ -127,22 +180,26 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           provenance: false # Disables the generation of provenance attestation
-          # the tags can be either from input or test_tag
-          tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag || env.test_tag }}
-        continue-on-error: true
+          tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
+
+      # No continue-on-error here. It used to swallow a failed push and let the
+      # next step submit a marketplace version pointing at whatever image was
+      # already sitting in ECR under that tag. ECR tags are immutable, so a
+      # re-run of an existing tag fails the push and the submitted version would
+      # describe stale content while the job reported success.
 
       - name: Submit New Version Request for AWS MP Listing
         env:
           ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
-          IMAGE_TAG: "${{ github.event.inputs.image_tag }}"
+          IMAGE_TAG: "${{ inputs.image_tag }}"
           PRODUCT_ID: ${{ env.PRODUCT_ID }}
           AWS_MP_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
         run: |
           chmod +x ./.github/utils/submit-aws-mp-listing.sh
           ./.github/utils/submit-aws-mp-listing.sh
           
-  build:
-      # submit a new version to AWS Marketplace that will be reviewed by AWS
+  publish:
+      # Publishes the tested image under the release version and submits it to AWS Marketplace for review
       if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
       runs-on:
           ubuntu-latest
@@ -157,33 +214,27 @@ jobs:
             uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
           - name: Configure AWS credentials for vault access
-            uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+            uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
             with:
               role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
               aws-region: us-east-1
 
           - name: Get secrets from vault
             id: vault-secrets
-            uses: aws-actions/aws-secretsmanager-get-secrets@2cb1a461cbd4865ac4299648312e4704c646cd53 # v3.0.1
+            uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
             with:
               secret-ids: |
                 ,/vault/liquibase
               parse-json-secrets: true
 
           - name: Configure AWS Credentials
-            uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+            uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
             with:
               role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
               aws-region: us-east-1
 
-          - name: Set up QEMU
-            uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
-
-          - name: Set up Docker Buildx
-            uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
           - name: Login to ECR Registry
-            uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+            uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
             with:
               registry: ${{ env.AWS_MP_REGISTRY }}
               username: ${{ env.AWS_MP_ACCESS_KEY }}
@@ -196,21 +247,134 @@ jobs:
               echo "LATEST_TAG=$LATEST_TAG"
               echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-          - name: Build and Push Docker Image
+          # This job publishes under whatever version the Dockerfile on main
+          # says, which is not necessarily the version that was validated. The
+          # poller dispatches the validated version as validated_version so the two can
+          # be compared here. A mismatch means main moved between validation and
+          # release, and publishing would ship a version nobody tested. Public
+          # marketplace versions cannot be deleted, only restricted, so this
+          # fails instead.
+          #
+          # validated_version may be empty on a manual dispatch; tested_image_tag
+          # is still required and checked below.
+          # This job ignores image_tag, which is the dry run's prefixed ECR tag.
+          - name: Verify the Dockerfile matches the validated version
             env:
-              ECR_REGISTRY: ${{ env.AWS_MP_REGISTRY }}
-            uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
-            with:
-              context: .
-              file: Dockerfile
-              no-cache: true
-              push: true
-              platforms: linux/amd64,linux/arm64
-              provenance: false # Disables the generation of provenance attestation
-              tags: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.get_latest_tag.outputs.LATEST_TAG }}
-            continue-on-error: true
+              VALIDATED_VERSION: "${{ inputs.validated_version }}"
+              DOCKERFILE_VERSION: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
+            run: |
+              if [ -z "${VALIDATED_VERSION}" ]; then
+                echo "No validated version supplied; releasing the Dockerfile version ${DOCKERFILE_VERSION}."
+                exit 0
+              fi
+
+              if [ "${VALIDATED_VERSION}" != "${DOCKERFILE_VERSION}" ]; then
+                echo "::error::Validated version '${VALIDATED_VERSION}' does not match Dockerfile version '${DOCKERFILE_VERSION}'. Refusing to publish an unvalidated version."
+                exit 1
+              fi
+
+              echo "✅ Dockerfile version ${DOCKERFILE_VERSION} matches the validated version."
+
+          # Accepts test-<version>, test-<version>-<run> and test-<version>-<run>.<attempt>, the suffixes released_version strips.
+          - name: Verify the tested image belongs to this version
+            env:
+              TESTED_IMAGE_TAG: "${{ inputs.tested_image_tag }}"
+              VERSION: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
+            run: |
+              if [ -z "${TESTED_IMAGE_TAG}" ]; then
+                echo "::error::A production release needs tested_image_tag. It publishes the image that passed validation and never rebuilds."
+                exit 1
+              fi
+              if [[ ! "${TESTED_IMAGE_TAG}" =~ ^test-${VERSION//./\\.}(-[0-9]+(\.[0-9]+)?)?$ ]]; then
+                echo "::error::'${TESTED_IMAGE_TAG}' is not a test image of ${VERSION}. Refusing to publish it as ${VERSION}."
+                exit 1
+              fi
+              echo "✅ ${TESTED_IMAGE_TAG} is a test image of ${VERSION}."
+
+          # completed is written only after the ECS tests pass; on_hold and every other state is refused.
+          - name: Verify the tested image passed the ECS tests
+            env:
+              TESTED_IMAGE_TAG: "${{ inputs.tested_image_tag }}"
+            run: |
+              STATUSES=$(aws dynamodb scan --region "${AWS_REGION}" \
+                --table-name liquibase-secure-marketplace-changesets \
+                --filter-expression "imageTag = :t" \
+                --expression-attribute-values '{":t":{"S":"'"${TESTED_IMAGE_TAG}"'"}}' \
+                --projection-expression testStatus \
+                --query 'Items[].testStatus.S' --output text)
+              echo "testStatus for ${TESTED_IMAGE_TAG}: '${STATUSES}'"
+              if ! grep -qwE 'completed|production_dispatched|production_released' <<< "${STATUSES}"; then
+                echo "::error::${TESTED_IMAGE_TAG} has no record of passing the ECS tests (testStatus '${STATUSES}'). Refusing to publish it."
+                exit 1
+              fi
+
+          # Restricted proves the restriction succeeded; already_listed lets a re-run skip a duplicate submit.
+          - name: Check the listing
+            id: listing
+            env:
+              TESTED_IMAGE_TAG: "${{ inputs.tested_image_tag }}"
+              VERSION: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
+            run: |
+              aws marketplace-catalog describe-entity --catalog AWSMarketplace --region "${AWS_REGION}" \
+                --entity-id "${PRODUCT_ID}" --query DetailsDocument --output json > entity.json
+              TESTED_VISIBILITY=$(jq -r --arg t "${TESTED_IMAGE_TAG}" \
+                '[.Versions[] | select(.VersionTitle == $t) | .DeliveryOptions[].Visibility] | unique | join(",")' entity.json)
+              echo "${TESTED_IMAGE_TAG} delivery options: '${TESTED_VISIBILITY}'"
+              if [ "${TESTED_VISIBILITY}" != "Restricted" ]; then
+                echo "::error::${TESTED_IMAGE_TAG} is not restricted on the listing ('${TESTED_VISIBILITY}'), so its validation never finished. Refusing to publish it."
+                exit 1
+              fi
+              if jq -e --arg v "${VERSION}" 'any(.Versions[]; .VersionTitle == $v)' entity.json > /dev/null; then
+                echo "::notice::${VERSION} is already on the listing; the submit step will be skipped."
+                echo "already_listed=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "already_listed=false" >> "$GITHUB_OUTPUT"
+              fi
+
+          # ECR tags here are immutable, so the copy must preserve the digest or fail before the tag exists.
+          - name: Publish the tested image under the release version
+            env:
+              REPO: ${{ env.AWS_MP_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+              TESTED_IMAGE_TAG: "${{ inputs.tested_image_tag }}"
+              VERSION: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"
+            run: |
+              # Hashes the raw manifest bytes via a file, since $(...) would strip a trailing newline.
+              digest() {
+                skopeo inspect --raw "docker://$1" > manifest.json || return 1
+                echo "sha256:$(sha256sum < manifest.json | cut -d' ' -f1)"
+              }
+
+              TESTED_DIGEST=$(digest "${REPO}:${TESTED_IMAGE_TAG}")
+              echo "Tested image ${TESTED_IMAGE_TAG} is ${TESTED_DIGEST}"
+
+              # Only "manifest unknown" means the tag is free; any other error (auth, throttling) stops here.
+              if skopeo inspect --raw "docker://${REPO}:${VERSION}" > /dev/null 2> probe.err; then
+                EXISTING_DIGEST=$(digest "${REPO}:${VERSION}")
+                if [ "${EXISTING_DIGEST}" != "${TESTED_DIGEST}" ]; then
+                  echo "::error::${VERSION} already exists as ${EXISTING_DIGEST}, not the tested ${TESTED_DIGEST}. Refusing to submit it."
+                  exit 1
+                fi
+                echo "${VERSION} already points at the tested image; nothing to copy."
+                exit 0
+              elif ! grep -qi 'manifest unknown' probe.err; then
+                cat probe.err
+                echo "::error::Could not tell whether ${VERSION} exists. Not copying."
+                exit 1
+              fi
+              echo "${VERSION} does not exist yet: $(cat probe.err)"
+
+              skopeo --insecure-policy copy --all --preserve-digests \
+                "docker://${REPO}@${TESTED_DIGEST}" "docker://${REPO}:${VERSION}"
+
+              PUBLISHED_DIGEST=$(digest "${REPO}:${VERSION}")
+              if [ "${PUBLISHED_DIGEST}" != "${TESTED_DIGEST}" ]; then
+                echo "::error::${VERSION} resolved to ${PUBLISHED_DIGEST} after the copy, not the tested ${TESTED_DIGEST}."
+                exit 1
+              fi
+              echo "✅ ${VERSION} is the tested image ${TESTED_DIGEST}."
 
           - name: Submit Request for AWS MP Listing
+            if: ${{ steps.listing.outputs.already_listed != 'true' }}
             env:
               ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
               IMAGE_TAG: "${{ steps.get_latest_tag.outputs.LATEST_TAG }}"

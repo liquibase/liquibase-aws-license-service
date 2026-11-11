@@ -16,6 +16,10 @@ permissions:
 jobs:
   run-core-tasks:
     runs-on: ubuntu-latest
+    # `aws ecs wait tasks-stopped` bounds itself at ~10 minutes, so a healthy leg
+    # finishes well inside this. The ceiling exists so a hung step fails in half
+    # an hour instead of occupying a runner until GitHub's 6-hour limit.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -32,28 +36,35 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Configure AWS credentials for vault access
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: Get secrets from vault
         id: vault-secrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@2cb1a461cbd4865ac4299648312e4704c646cd53 # v3.0.1
+        uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
         with:
           secret-ids: |
             ,/vault/liquibase
           parse-json-secrets: true
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
           aws-region: us-east-1
           role-session-name: AWSMarketplaceApprovalSession
 
+      # jq ships with ubuntu-latest, so this normally installs nothing and the
+      # only thing it reliably does is reach out to an Ubuntu mirror. When that
+      # mirror stalls, apt-get update hangs with no timeout of its own and takes
+      # the whole validation run with it. Two runs on 2026-08-18 hung here for
+      # over half an hour on a different matrix leg each time, and cancelling
+      # one of them also cancelled restrict-marketplace-listing, leaving a test
+      # image public that should have been withdrawn.
       - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: command -v jq >/dev/null || (sudo apt-get update && sudo apt-get install -y jq)
 
       - name: Build IMAGE_URI from tag
         id: resolve_image
@@ -107,10 +118,14 @@ jobs:
 
   cleanup-dynamodb-test-tables:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: run-core-tasks
-      # Cleanup DynamoDB test tables after successful test completion
-      # Uses custom script instead of Liquibase dropall to protect tracking table
-    if: ${{ needs.run-core-tasks.result == 'success' && inputs.image_tag != '' }}
+      # Tear down DynamoDB test tables whether the test passed OR failed. A failed
+      # run still creates tables (e.g. updateGlobalIndexTest); gating cleanup on
+      # success left them behind, and the next run failed with ResourceInUseException
+      # ("Table already exists") — a self-perpetuating cycle. always() breaks it.
+      # Uses custom script instead of Liquibase dropall to protect the tracking table.
+    if: ${{ always() && inputs.image_tag != '' }}
     env:
       AWS_REGION: us-east-1
 
@@ -119,21 +134,21 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Configure AWS credentials for vault access
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: Get secrets from vault
         id: vault-secrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@2cb1a461cbd4865ac4299648312e4704c646cd53 # v3.0.1
+        uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
         with:
           secret-ids: |
             ,/vault/liquibase
           parse-json-secrets: true
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
           aws-region: us-east-1
@@ -146,8 +161,12 @@ jobs:
 
   restrict-marketplace-listing:
     runs-on: ubuntu-latest
-    needs: cleanup-dynamodb-test-tables
-    if: ${{ needs.cleanup-dynamodb-test-tables.result == 'success' }}
+    timeout-minutes: 15
+    needs: [run-core-tasks, cleanup-dynamodb-test-tables]
+    # Only restrict/publish the listing when the TESTS passed. cleanup now runs on
+    # failure too (always()), so its success alone must not gate publishing — the
+    # core tasks must have succeeded as well.
+    if: ${{ needs.run-core-tasks.result == 'success' && needs.cleanup-dynamodb-test-tables.result == 'success' }}
     env:
       AWS_REGION: us-east-1
     steps:
@@ -155,21 +174,21 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Configure AWS credentials for vault access
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: Get secrets from vault
         id: vault-secrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@2cb1a461cbd4865ac4299648312e4704c646cd53 # v3.0.1
+        uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
         with:
           secret-ids: |
             ,/vault/liquibase
           parse-json-secrets: true
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE }}
           aws-region: us-east-1
@@ -191,7 +210,7 @@ jobs:
       #
       # What happens next:
       #   1. Test image restriction completes (~15 min)
-      #   2. Lambda polls and finds TestStatus=completed in DynamoDB
+      #   2. Lambda polls and finds testStatus=completed in DynamoDB
       #   3. Lambda verifies restriction change set has Status=SUCCEEDED
       #   4. Lambda triggers deploy-extension-to-marketplace.yml (dry_run=false)
       #   5. Production version submitted to AWS Marketplace
@@ -210,11 +229,11 @@ jobs:
           # Find the change set ID for this image tag
           CHANGE_SETS=$(aws dynamodb scan \
             --table-name liquibase-secure-marketplace-changesets \
-            --filter-expression "ImageTag = :tag" \
+            --filter-expression "imageTag = :tag" \
             --expression-attribute-values '{":tag":{"S":"'"$IMAGE_TAG"'"}}' \
             --region us-east-1)
 
-          CHANGESET_ID=$(echo "$CHANGE_SETS" | jq -r '.Items[0].ChangeSetId.S // empty')
+          CHANGESET_ID=$(echo "$CHANGE_SETS" | jq -r '.Items[0].changeSetId.S // empty')
 
           if [ -n "$CHANGESET_ID" ]; then
             echo "Found change set: $CHANGESET_ID for image tag: $IMAGE_TAG"
@@ -222,8 +241,8 @@ jobs:
             # Update the item to mark TaskDefinition as completed
             aws dynamodb update-item \
               --table-name liquibase-secure-marketplace-changesets \
-              --key '{"ChangeSetId":{"S":"'"$CHANGESET_ID"'"}}' \
-              --update-expression "SET TestStatus = :status, TestCompletedAt = :timestamp" \
+              --key '{"changeSetId":{"S":"'"$CHANGESET_ID"'"}}' \
+              --update-expression "SET testStatus = :status, testCompletedAt = :timestamp" \
               --expression-attribute-values '{":status":{"S":"completed"},":timestamp":{"S":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}}' \
               --region us-east-1
 

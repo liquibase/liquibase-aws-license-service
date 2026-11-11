@@ -16,11 +16,41 @@ updates:
     pull-request-branch-name:
       separator: "-"
     labels: ["sdou"]
+    # amazon.aws.version must stay matched to the AWS SDK bundled in the
+    # liquibase-aws-extension inside the Secure base image (2.42.40). Letting
+    # Dependabot bump it ahead re-introduces the XXHASH3 checksums clash that
+    # broke the test-5.2.0 image. See TECHOPS-622. Bump this manually, in
+    # lockstep with the extension, only.
+    #
+    # liquibase-commercial is driven by the Dockerfile bump, not by Maven. A
+    # liquibase-secure release otherwise produces two independent PRs, and they
+    # do not land together: the Maven one has no Dockerfile change so it skips
+    # the sync step and merges in seconds, while the Dockerfile one carries the
+    # sync commits and can sit for hours. In between, main holds a pom and a
+    # Dockerfile on different versions, and a deploy launched in that window
+    # builds one version and labels it as another. Since dependabot-sync-and-merge.yml
+    # already syncs liquibase-secure.version in pom.xml from the Dockerfile, the
+    # Dockerfile PR is the single self-consistent unit. Let it be the only one.
+    ignore:
+      - dependency-name: "software.amazon.awssdk:*"
+      - dependency-name: "com.liquibase:liquibase-commercial"
 
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "daily"
+      # Check late in the day, because every recent liquibase-secure image has
+      # been published to Docker Hub in the afternoon or evening UTC:
+      #
+      #   5.1.1  15:34   5.2.0  20:13   5.2.1  15:10   5.2.2  14:33
+      #
+      # Unpinned, this ecosystem ran at 12:22 UTC, so the check on publication
+      # day was always too early and the bump could not appear before the next
+      # weekday at the earliest. 22:00 clears the latest of those four by nearly
+      # two hours. Note `daily` skips weekends, so a Friday evening publish
+      # still waits for Monday; this removes the guaranteed same-day miss, not
+      # every source of delay.
+      time: "22:00"
     pull-request-branch-name:
       separator: "-"
     labels: ["sdou"]

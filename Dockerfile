@@ -1,4 +1,4 @@
-FROM liquibase/liquibase-secure:5.1.1
+FROM liquibase/liquibase-secure:6.0.1
 
 # Marker which indicates this is a Liquibase docker container
 ENV DOCKER_AWS_LIQUIBASE=true
