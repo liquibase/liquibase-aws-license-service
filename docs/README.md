@@ -48,7 +48,7 @@ hours is stuck, and the watchdog will flag it.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| [`dependabot-sync-and-merge.yml`](../.github/workflows/dependabot-sync-and-merge.yml) | Dependabot PR touching `Dockerfile`/`pom.xml` | Syncs `liquibase-secure.version` and `amazon.aws.version` in `pom.xml` to the Dockerfile, pushes those commits as liquibot so the PR checks run, arms auto-merge, waits up to 30 min for the merge (posts to the devops-core Slack channel if it times out), then dispatches the auto-trigger |
+| [`dependabot-sync-and-merge.yml`](../.github/workflows/dependabot-sync-and-merge.yml) | Dependabot PR touching `Dockerfile`/`pom.xml` | Syncs `liquibase-secure.version` and `amazon.aws.version` in `pom.xml` to the Dockerfile, pushes those commits as liquibot so the PR checks run, arms auto-merge, waits up to 30 min for the merge (posts to #team-techops if it times out), then dispatches the auto-trigger |
 | [`auto-trigger-marketplace-deployment.yml`](../.github/workflows/auto-trigger-marketplace-deployment.yml) | Dispatch from the sync workflow, or a push to `main` changing `Dockerfile`/`pom.xml` | Detects the version change and dispatches a dry run with a `test-` tag |
 | [`deploy-extension-to-marketplace.yml`](../.github/workflows/deploy-extension-to-marketplace.yml) | Dispatch only | `dry_run=true`: builds, pushes and submits a `test-`/`qa-` image. `dry_run=false`: publishes `tested_image_tag` as the Dockerfile version (see below) |
 | [`run-task-definitions.yml`](../.github/workflows/run-task-definitions.yml) | Dispatch from the poller | Runs the ECS test tasks on `aws-mp-test-cluster`; on success restricts the test version and sets `testStatus=completed` |
