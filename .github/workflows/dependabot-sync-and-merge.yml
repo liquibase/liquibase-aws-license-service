@@ -47,15 +47,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]' && github.repository == 'liquibase/liquibase-aws-license-service'
     steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-
-      # Vault access is set up first so LIQUIBOT_PAT_GPM_ACCESS is available to the
-      # amazon.aws.version sync (which reads the private liquibase-pro repo) as well as
-      # the later auto-merge step.
+      # Vault access is set up before the checkout so LIQUIBOT_PAT_GPM_ACCESS can be the
+      # checkout token (see below), and is also available to the amazon.aws.version sync
+      # (which reads the private liquibase-pro repo) and the auto-merge step.
       - name: Configure AWS credentials for vault access
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
@@ -69,6 +63,18 @@ jobs:
           secret-ids: |
             ,/vault/liquibase
           parse-json-secrets: true
+
+      # The sync commits below are pushed with the credentials this checkout persists.
+      # Pushed with GITHUB_TOKEN, the checks on the new head waited for a manual approval,
+      # so the required verify-amazon-aws-version check never ran and 6.0.0 (PR #626) and
+      # 6.0.1 (PR #630) both stalled for days. Pushes made with the liquibot PAT run the
+      # checks normally, as sync-amazon-aws-version.yml's PRs already do.
+      - name: Checkout PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
 
       # Step 1: Check if this PR modifies the Dockerfile (liquibase-secure update)
       # Only sync versions when Dockerfile is changed — syncing from a stale branch
@@ -255,6 +261,7 @@ jobs:
       # is loud on purpose: a bump whose merge never lands has not been released
       # and must not look like it was.
       - name: Wait for the bump to merge
+        id: wait_for_merge
         if: steps.check_dockerfile_changed.outputs.dockerfile_changed == 'true' && contains(steps.metadata.outputs.dependency-names, 'liquibase/liquibase-secure')
         run: |
           set -euo pipefail
@@ -282,6 +289,23 @@ jobs:
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
+
+      # A failed run on a Dependabot PR notifies nobody, so the 6.0.1 timeout went
+      # unnoticed for days. Post it to #team-techops instead. The webhook is copied into
+      # /vault/liquibase because this job can't read /vault/devops.
+      - name: Alert on merge wait timeout
+        if: failure() && steps.wait_for_merge.outcome == 'failure'
+        uses: rtCamp/action-slack-notify@f43175ac92c1fb2e8f9cd89aa2984941ac0d30dc # v2.3.3
+        env:
+          SLACK_WEBHOOK: ${{ env.TEAM_TECHOPS_SLACK_WEBHOOK_URL }}
+          SLACK_USERNAME: liquibot
+          SLACK_COLOR: danger
+          SLACK_ICON_EMOJI: ":rotating_light:"
+          SLACK_TITLE: "AWS Marketplace bump did not merge"
+          SLACK_MESSAGE: |
+            Auto-merge did not complete within 30 minutes for <${{ github.event.pull_request.html_url }}|PR #${{ github.event.pull_request.number }}> (liquibase-secure ${{ steps.extract_dockerfile_version.outputs.dockerfile_version }}). The marketplace deployment was not dispatched.
+            Check the PR's required checks, including runs waiting for approval: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|sync run>
+          MSG_MINIMAL: true
 
       # Step 4: Trigger marketplace deployment for liquibase-secure updates
       - name: Trigger marketplace deployment validation
