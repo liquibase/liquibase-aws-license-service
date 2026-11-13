@@ -48,7 +48,7 @@ hours is stuck, and the watchdog will flag it.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| [`dependabot-sync-and-merge.yml`](../.github/workflows/dependabot-sync-and-merge.yml) | Dependabot PR touching `Dockerfile`/`pom.xml` | Syncs `liquibase-secure.version` and `amazon.aws.version` in `pom.xml` to the Dockerfile, arms auto-merge, waits up to 30 min for the merge, then dispatches the auto-trigger |
+| [`dependabot-sync-and-merge.yml`](../.github/workflows/dependabot-sync-and-merge.yml) | Dependabot PR touching `Dockerfile`/`pom.xml` | Syncs `liquibase-secure.version` and `amazon.aws.version` in `pom.xml` to the Dockerfile, pushes those commits as liquibot so the PR checks run, arms auto-merge, waits up to 30 min for the merge (posts to the devops-core Slack channel if it times out), then dispatches the auto-trigger |
 | [`auto-trigger-marketplace-deployment.yml`](../.github/workflows/auto-trigger-marketplace-deployment.yml) | Dispatch from the sync workflow, or a push to `main` changing `Dockerfile`/`pom.xml` | Detects the version change and dispatches a dry run with a `test-` tag |
 | [`deploy-extension-to-marketplace.yml`](../.github/workflows/deploy-extension-to-marketplace.yml) | Dispatch only | `dry_run=true`: builds, pushes and submits a `test-`/`qa-` image. `dry_run=false`: publishes `tested_image_tag` as the Dockerfile version (see below) |
 | [`run-task-definitions.yml`](../.github/workflows/run-task-definitions.yml) | Dispatch from the poller | Runs the ECS test tasks on `aws-mp-test-cluster`; on success restricts the test version and sets `testStatus=completed` |
@@ -120,18 +120,19 @@ tracked, which happens when the poller is down longer than `LOOKBACK_DAYS`.
 
 ## 🔍 If a release does not appear
 
-1. Open the latest [watchdog run](https://github.com/liquibase/liquibase-aws-license-service/actions/workflows/marketplace-release-watchdog.yml).
-2. Read the poller logs: log group `/aws/lambda/PollMarketplaceChangeSetStatus`.
+1. If the Dependabot bump PR never merged, check its latest commit for runs waiting for approval (`action_required`); approving them runs the checks.
+2. Open the latest [watchdog run](https://github.com/liquibase/liquibase-aws-license-service/actions/workflows/marketplace-release-watchdog.yml).
+3. Read the poller logs: log group `/aws/lambda/PollMarketplaceChangeSetStatus`.
    - `No restriction change set found yet for <tag>` on repeat: the restriction lookup is not matching.
    - `Failed to trigger workflow: ... 422`: GitHub rejected the dispatch, usually a required input the poller does not send.
-3. List the latest change sets:
+4. List the latest change sets:
    ```bash
    aws marketplace-catalog list-change-sets --catalog AWSMarketplace --region us-east-1 \
      --filter-list '[{"Name":"EntityId","ValueList":["prod-l2panlvbozc5e"]}]' \
      --sort '{"SortBy":"StartTime","SortOrder":"DESCENDING"}' --max-results 5
    ```
    AWS rejects a change set while another is in flight on the same product.
-4. Check the [deploy runs](https://github.com/liquibase/liquibase-aws-license-service/actions/workflows/deploy-extension-to-marketplace.yml), not just their status:
+5. Check the [deploy runs](https://github.com/liquibase/liquibase-aws-license-service/actions/workflows/deploy-extension-to-marketplace.yml), not just their status:
    - Dry run: grep the log for `buildx failed`. ECR tags are immutable, so pushing an existing tag fails.
    - Production run: look for `✅ <version> is the tested image sha256:…`, or the notice that the version is already on the listing.
 
