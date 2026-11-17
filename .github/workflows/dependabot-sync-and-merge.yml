@@ -295,7 +295,7 @@ jobs:
       # /vault/liquibase because this job can't read /vault/devops.
       - name: Alert on merge wait timeout
         if: failure() && steps.wait_for_merge.outcome == 'failure'
-        uses: rtCamp/action-slack-notify@f43175ac92c1fb2e8f9cd89aa2984941ac0d30dc # v2.3.3
+        uses: rtCamp/action-slack-notify@e31e87e03dd19038e411e38ae27cbad084a90661 # v2.3.3
         env:
           SLACK_WEBHOOK: ${{ env.TEAM_TECHOPS_SLACK_WEBHOOK_URL }}
           SLACK_USERNAME: liquibot
