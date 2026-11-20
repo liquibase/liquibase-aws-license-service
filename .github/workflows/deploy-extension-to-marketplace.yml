@@ -166,8 +166,6 @@ jobs:
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ${{ env.AWS_MP_REGISTRY }}
-          username: ${{ env.AWS_MP_ACCESS_KEY }}
-          password: ${{ env.AWS_MP_ACCESS_KEY_ID }}
 
       - name: Build and Push Docker Image
         env:
@@ -237,8 +235,6 @@ jobs:
             uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
             with:
               registry: ${{ env.AWS_MP_REGISTRY }}
-              username: ${{ env.AWS_MP_ACCESS_KEY }}
-              password: ${{ env.AWS_MP_ACCESS_KEY_ID }}
 
           - name: Get latest liquibase docker tag
             id: get_latest_tag
