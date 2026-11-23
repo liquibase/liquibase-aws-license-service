@@ -125,8 +125,9 @@ no row for those, so neither check above can see them. The run log names the
 change set, version title and error code. The scan report link is withheld
 because this repository is public; read it with
 `aws marketplace-catalog describe-change-set --catalog AWSMarketplace --change-set-id <id> --region us-east-1`.
-Recovery depends on the change type, and the log line says which applies:
+Recovery depends on the failure, and the log line says which applies:
 
+- `SERVER_FAULT` (any change type): AWS says the fault is on its side and to retry, so resubmit the same change before rebuilding anything.
 - `AddDeliveryOptions` (a rejected version submission): version titles are one-shot, so rebuild under a new tag.
 - `RestrictDeliveryOptions` (a failed restriction): if the version is already Restricted, this was a duplicate and needs nothing. Otherwise rerun [`restrict-aws-mp-listing.sh`](../.github/utils/restrict-aws-mp-listing.sh) for that tag.
 

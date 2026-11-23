@@ -316,26 +316,28 @@ jobs:
               --region "${AWS_REGION}" \
               --output json > "changeset-${CHANGESET}.json"
 
-            # This repository is public and a SCAN_ERROR message is a signed scan report link, so URLs are withheld.
+            # URLs are withheld because this repo is public and a SCAN_ERROR message is a signed report link, and SERVER_FAULT advice comes first because AWS says to retry it.
             jq -r '
+              def shown: if test("^https?://") then " (report link withheld; run describe-change-set to read it)"
+                         elif . == "" then "" else ": \(.)" end;
+              def advice($type; $code):
+                if $code == "SERVER_FAULT" then ". AWS-side fault, which AWS says to retry: resubmit the same change before rebuilding."
+                elif $type == "AddDeliveryOptions" then ". Version titles are one-shot: rebuild under a new tag."
+                elif $type == "RestrictDeliveryOptions" then ". Unless the version is already Restricted (a duplicate), rerun restrict-aws-mp-listing.sh for it."
+                else "" end;
               . as $cs
-              | .ChangeSet[]
+              | ($cs.FailureCode // "FAILED") as $code
+              | "\($cs.ChangeSetId)" as $id
+              | ([.ChangeSet[]?.ErrorDetailList // [] | .[]] | length > 0) as $has_details
+              | (if (.ChangeSet // []) == [] then [{}] else .ChangeSet end)[]
               | (.DetailsDocument.Version.VersionTitle // "no version title") as $title
               | (.ChangeType // "unknown change") as $type
-              | (.ErrorDetailList // [])[]
-              | "\($cs.ChangeSetId) \($title) \($type) ended \($cs.EndTime): \(.ErrorCode)"
-                + (if (.ErrorMessage // "") | test("^https?://") then " (report link withheld; run describe-change-set to read it)"
-                   elif (.ErrorMessage // "") == "" then ""
-                   else ": \(.ErrorMessage)" end)
-                + (if $type == "AddDeliveryOptions" then ". Version titles are one-shot: rebuild under a new tag."
-                   elif $type == "RestrictDeliveryOptions" then ". Unless the version is already Restricted (a duplicate), rerun restrict-aws-mp-listing.sh for it."
-                   else "" end)
+              | "\($id) \($title) \($type) ended \($cs.EndTime)" as $head
+              | if $has_details
+                then ((.ErrorDetailList // [])[] | "\($head): \(.ErrorCode)\((.ErrorMessage // "") | shown)\(advice($type; $code))")
+                else "\($head): \($code)\(($cs.FailureDescription // "") | shown)\(advice($type; $code))"
+                end
             ' "changeset-${CHANGESET}.json" > errors.txt
-
-            if [ ! -s errors.txt ]; then
-              jq -r '"\(.ChangeSetId) ended \(.EndTime): \(.FailureCode // "FAILED") \(.FailureDescription // "")"' \
-                "changeset-${CHANGESET}.json" > errors.txt
-            fi
 
             while IFS= read -r LINE; do
               echo "❌ ${LINE}"
