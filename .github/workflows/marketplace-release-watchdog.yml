@@ -45,20 +45,8 @@ jobs:
       contents: read
     env:
       AWS_REGION: us-east-1
-      # These three are prefixed, and must stay prefixed.
-      #
-      # "Get secrets from vault" runs aws-secretsmanager-get-secrets with
-      # parse-json-secrets, which turns every key in /vault/liquibase into an
-      # environment variable and REFUSES to overwrite a name that already
-      # exists: "The environment name 'PRODUCT_ID' is already in use." Job-level
-      # env is set before that step runs, so an unprefixed PRODUCT_ID collided
-      # with a vault key and failed the step outright. Both scans were then
-      # skipped, which meant this watchdog could never once report a stall: the
-      # alarm for silent failures, silently doing nothing.
-      #
-      # AWS_REGION is left bare on purpose. configure-aws-credentials sets it
-      # before the vault step and that did not collide, so it is not a key in
-      # the secret.
+      # Prefixed so no vault key can collide with them: the old whole-blob vault
+      # read refused an existing PRODUCT_ID and silently disabled this watchdog.
       MP_TABLE_NAME: liquibase-secure-marketplace-changesets
       MP_PRODUCT_ID: prod-l2panlvbozc5e
       MP_STALL_HOURS: ${{ inputs.stall_hours || '2' }}
@@ -87,19 +75,11 @@ jobs:
           echo "MP_STALL_HOURS=${HOURS}" >> "$GITHUB_ENV"
           echo "Stall threshold: ${HOURS}h"
 
-      - name: Configure AWS credentials for vault access
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      - name: Get the Marketplace deploy role from vault
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
         with:
-          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
-          aws-region: us-east-1
-
-      - name: Get secrets from vault
-        id: vault-secrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
-        with:
-          secret-ids: |
-            ,/vault/liquibase
-          parse-json-secrets: true
+          group: aws-mp-github-oidc-role-arn-aws-license-service
+          role-arn: ${{ secrets.VAULT_GROUPED_AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE_ROLE_ARN }}
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0

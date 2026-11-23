@@ -50,19 +50,17 @@ jobs:
       # Vault access is set up before the checkout so LIQUIBOT_PAT_GPM_ACCESS can be the
       # checkout token (see below), and is also available to the amazon.aws.version sync
       # (which reads the private liquibase-pro repo) and the auto-merge step.
-      - name: Configure AWS credentials for vault access
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      - name: Get the liquibot PAT from vault
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
         with:
-          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
-          aws-region: us-east-1
+          group: liquibot-github-pat
+          role-arn: ${{ secrets.VAULT_GROUPED_LIQUIBOT_GITHUB_PAT_ROLE_ARN }}
 
-      - name: Get secrets from vault
-        id: vault-secrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
+      - name: Get the team-techops Slack webhook from vault
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
         with:
-          secret-ids: |
-            ,/vault/liquibase
-          parse-json-secrets: true
+          group: team-techops-slack-webhook
+          role-arn: ${{ secrets.VAULT_GROUPED_TEAM_TECHOPS_SLACK_WEBHOOK_ROLE_ARN }}
 
       # The sync commits below are pushed with the credentials this checkout persists.
       # Pushed with GITHUB_TOKEN, the checks on the new head waited for a manual approval,
@@ -291,8 +289,7 @@ jobs:
           GH_TOKEN: ${{ env.LIQUIBOT_PAT_GPM_ACCESS }}
 
       # A failed run on a Dependabot PR notifies nobody, so the 6.0.1 timeout went
-      # unnoticed for days. Post it to #team-techops instead. The webhook is copied into
-      # /vault/liquibase because this job can't read /vault/devops.
+      # unnoticed for days. Post it to #team-techops instead.
       - name: Alert on merge wait timeout
         if: failure() && steps.wait_for_merge.outcome == 'failure'
         uses: rtCamp/action-slack-notify@f43175ac92c1fb2e8f9cd89aa2984941ac0d30dc # v2.3.3

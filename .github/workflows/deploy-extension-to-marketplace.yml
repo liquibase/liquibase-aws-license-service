@@ -136,19 +136,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Configure AWS credentials for vault access
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      - name: Get the Marketplace deploy role from vault
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
         with:
-          role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
-          aws-region: us-east-1
+          group: aws-mp-github-oidc-role-arn-aws-license-service
+          role-arn: ${{ secrets.VAULT_GROUPED_AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE_ROLE_ARN }}
 
-      - name: Get secrets from vault
-        id: vault-secrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
+      - name: Get the Marketplace registry credentials from vault
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
         with:
-          secret-ids: |
-            ,/vault/liquibase
-          parse-json-secrets: true
+          group: aws-marketplace
+          role-arn: ${{ secrets.VAULT_GROUPED_AWS_MARKETPLACE_ROLE_ARN }}
+
+      - name: Get the ECR repository from vault
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+        with:
+          group: aws-ecr-ecs
+          role-arn: ${{ secrets.VAULT_GROUPED_AWS_ECR_ECS_ROLE_ARN }}
+
+      - name: Get the product id from vault
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+        with:
+          group: product-id
+          role-arn: ${{ secrets.VAULT_GROUPED_PRODUCT_ID_ROLE_ARN }}
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -213,19 +223,29 @@ jobs:
           - name: Checkout
             uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-          - name: Configure AWS credentials for vault access
-            uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+          - name: Get the Marketplace deploy role from vault
+            uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
             with:
-              role-to-assume: ${{ secrets.LIQUIBASE_VAULT_OIDC_ROLE_ARN }}
-              aws-region: us-east-1
+              group: aws-mp-github-oidc-role-arn-aws-license-service
+              role-arn: ${{ secrets.VAULT_GROUPED_AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE_ROLE_ARN }}
 
-          - name: Get secrets from vault
-            id: vault-secrets
-            uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
+          - name: Get the Marketplace registry credentials from vault
+            uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
             with:
-              secret-ids: |
-                ,/vault/liquibase
-              parse-json-secrets: true
+              group: aws-marketplace
+              role-arn: ${{ secrets.VAULT_GROUPED_AWS_MARKETPLACE_ROLE_ARN }}
+
+          - name: Get the ECR repository from vault
+            uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+            with:
+              group: aws-ecr-ecs
+              role-arn: ${{ secrets.VAULT_GROUPED_AWS_ECR_ECS_ROLE_ARN }}
+
+          - name: Get the product id from vault
+            uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+            with:
+              group: product-id
+              role-arn: ${{ secrets.VAULT_GROUPED_PRODUCT_ID_ROLE_ARN }}
 
           - name: Configure AWS Credentials
             uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
