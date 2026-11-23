@@ -53,7 +53,7 @@ hours is stuck, and the watchdog will flag it.
 | [`deploy-extension-to-marketplace.yml`](../.github/workflows/deploy-extension-to-marketplace.yml) | Dispatch only | `dry_run=true`: builds, pushes and submits a `test-`/`qa-` image. `dry_run=false`: publishes `tested_image_tag` as the Dockerfile version (see below) |
 | [`run-task-definitions.yml`](../.github/workflows/run-task-definitions.yml) | Dispatch from the poller | Runs the ECS test tasks on `aws-mp-test-cluster`; on success restricts the test version and sets `testStatus=completed` |
 | [`deploy-marketplace-poller-lambda.yml`](../.github/workflows/deploy-marketplace-poller-lambda.yml) | PR or push to `main` touching `lambda/marketplace-poller/**` | Tests the poller, and on `main` deploys it to `PollMarketplaceChangeSetStatus` |
-| [`marketplace-release-watchdog.yml`](../.github/workflows/marketplace-release-watchdog.yml) | Every 2 hours | Fails when a release has been stuck in one state for more than `stall_hours` (default 2) |
+| [`marketplace-release-watchdog.yml`](../.github/workflows/marketplace-release-watchdog.yml) | Every 2 hours | Fails when a release has been stuck in one state for more than `stall_hours` (default 2), or when a change set on the listing ended `FAILED` in the last 24 hours |
 | [`sync-amazon-aws-version.yml`](../.github/workflows/sync-amazon-aws-version.yml) | Daily | Opens a PR when `amazon.aws.version` drifts from the AWS SDK in the current Secure release |
 
 Notes on [`dependabot.yml`](../.github/dependabot.yml) (open
@@ -62,6 +62,7 @@ Notes on [`dependabot.yml`](../.github/dependabot.yml) (open
 - `com.liquibase:liquibase-commercial` is ignored and synced from the Dockerfile instead, so a Secure bump is always one self-consistent PR.
 - `software.amazon.awssdk:*` is ignored because `amazon.aws.version` must match the AWS SDK bundled in the Secure image; a newer SDK breaks the image with a checksum clash. Only the sync workflows change it.
 - The sync workflow waits for the merge because everything downstream reads `main`; do not remove the wait.
+- The docker entry keeps GitHub's default 3-day cooldown for third-party images but excludes `liquibase/liquibase-secure`, so a Secure release gets its bump PR at the first 22:00 UTC check after it reaches Docker Hub. Without the exclusion every Secure bump waited 3 days.
 
 ### 🚢 Production publish (`dry_run=false`)
 
@@ -117,6 +118,14 @@ Table `liquibase-secure-marketplace-changesets`, field `testStatus`:
 
 The watchdog also flags `test-*` versions that are still Public but were never
 tracked, which happens when the poller is down longer than `LOOKBACK_DAYS`.
+
+It also fails for 24 hours after any change set on the listing ends `FAILED`,
+such as a test image rejected by the AWS scan (`SCAN_ERROR`). The poller writes
+no row for those, so neither check above can see them. The run log names the
+change set, version title and error code. The scan report link is withheld
+because this repository is public; read it with
+`aws marketplace-catalog describe-change-set --catalog AWSMarketplace --change-set-id <id> --region us-east-1`.
+A version title is one-shot, so recover with a new build under a new tag.
 
 ## 🔍 If a release does not appear
 
