@@ -125,7 +125,10 @@ no row for those, so neither check above can see them. The run log names the
 change set, version title and error code. The scan report link is withheld
 because this repository is public; read it with
 `aws marketplace-catalog describe-change-set --catalog AWSMarketplace --change-set-id <id> --region us-east-1`.
-A version title is one-shot, so recover with a new build under a new tag.
+Recovery depends on the change type, and the log line says which applies:
+
+- `AddDeliveryOptions` (a rejected version submission): version titles are one-shot, so rebuild under a new tag.
+- `RestrictDeliveryOptions` (a failed restriction): if the version is already Restricted, this was a duplicate and needs nothing. Otherwise rerun [`restrict-aws-mp-listing.sh`](../.github/utils/restrict-aws-mp-listing.sh) for that tag.
 
 ## 🔍 If a release does not appear
 

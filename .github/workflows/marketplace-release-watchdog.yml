@@ -304,12 +304,12 @@ jobs:
             --filter-list "${FILTERS}" \
             --output json > failed.json
 
-          FAILED=0
+          # Exported before the describe loop so a describe error cannot hide the count from Report.
+          FAILED=$(jq '.ChangeSetSummaryList // [] | length' failed.json)
+          echo "FAILED=${FAILED}" >> "$GITHUB_ENV"
           : > failed.md
 
           for CHANGESET in $(jq -r '.ChangeSetSummaryList[]?.ChangeSetId' failed.json); do
-            FAILED=$((FAILED + 1))
-
             aws marketplace-catalog describe-change-set \
               --catalog AWSMarketplace \
               --change-set-id "${CHANGESET}" \
@@ -327,6 +327,9 @@ jobs:
                 + (if (.ErrorMessage // "") | test("^https?://") then " (report link withheld; run describe-change-set to read it)"
                    elif (.ErrorMessage // "") == "" then ""
                    else ": \(.ErrorMessage)" end)
+                + (if $type == "AddDeliveryOptions" then ". Version titles are one-shot: rebuild under a new tag."
+                   elif $type == "RestrictDeliveryOptions" then ". Unless the version is already Restricted (a duplicate), rerun restrict-aws-mp-listing.sh for it."
+                   else "" end)
             ' "changeset-${CHANGESET}.json" > errors.txt
 
             if [ ! -s errors.txt ]; then
@@ -343,8 +346,6 @@ jobs:
           if [ "${FAILED}" -eq 0 ]; then
             echo "✅ No change set failed in the last ${MP_FAILED_LOOKBACK_HOURS}h."
           fi
-
-          echo "FAILED=${FAILED}" >> "$GITHUB_ENV"
 
       # always(), with defaults below: if a scan step fails before writing
       # GITHUB_ENV the summary should still say what was known, rather than the
@@ -370,10 +371,9 @@ jobs:
           if [ "${FAILED}" -gt 0 ]; then
             {
               echo ""
-              echo "AWS rejected these change sets. A version title is one-shot, so the fix"
-              echo "is a new build under a new tag, not a retry:"
+              echo "AWS rejected these change sets (each line carries its recovery step):"
               echo ""
-              cat failed.md
+              cat failed.md 2>/dev/null || true
             } >> "$GITHUB_STEP_SUMMARY"
             echo "::error::${FAILED} marketplace change set(s) failed in the last ${MP_FAILED_LOOKBACK_HOURS}h."
           fi
