@@ -76,7 +76,7 @@ jobs:
           echo "Stall threshold: ${HOURS}h"
 
       - name: Get the Marketplace deploy role from vault
-        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@adee5f2b8709f6cd43684a5de0a8e0128bafc4eb # main
         with:
           group: aws-mp-github-oidc-role-arn-aws-license-service
           role-arn: ${{ secrets.VAULT_GROUPED_AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE_ROLE_ARN }}
