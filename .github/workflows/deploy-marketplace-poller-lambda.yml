@@ -83,7 +83,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Get the Marketplace deploy role from vault
-        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@6e9cd7ae7956e31d3381e247f25de68f306ba80c # main
         with:
           group: aws-mp-github-oidc-role-arn-aws-license-service
           role-arn: ${{ secrets.VAULT_GROUPED_AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE_ROLE_ARN }}
