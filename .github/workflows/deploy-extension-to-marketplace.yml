@@ -137,25 +137,25 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Get the Marketplace deploy role from vault
-        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@6e9cd7ae7956e31d3381e247f25de68f306ba80c # main
         with:
           group: aws-mp-github-oidc-role-arn-aws-license-service
           role-arn: ${{ secrets.VAULT_GROUPED_AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE_ROLE_ARN }}
 
       - name: Get the Marketplace registry credentials from vault
-        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@6e9cd7ae7956e31d3381e247f25de68f306ba80c # main
         with:
           group: aws-marketplace
           role-arn: ${{ secrets.VAULT_GROUPED_AWS_MARKETPLACE_ROLE_ARN }}
 
       - name: Get the ECR repository from vault
-        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@6e9cd7ae7956e31d3381e247f25de68f306ba80c # main
         with:
           group: aws-ecr-ecs
           role-arn: ${{ secrets.VAULT_GROUPED_AWS_ECR_ECS_ROLE_ARN }}
 
       - name: Get the product id from vault
-        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@6e9cd7ae7956e31d3381e247f25de68f306ba80c # main
         with:
           group: product-id
           role-arn: ${{ secrets.VAULT_GROUPED_PRODUCT_ID_ROLE_ARN }}
@@ -222,25 +222,25 @@ jobs:
             uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
           - name: Get the Marketplace deploy role from vault
-            uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+            uses: liquibase/build-logic/.github/actions/setup-aws-vault@6e9cd7ae7956e31d3381e247f25de68f306ba80c # main
             with:
               group: aws-mp-github-oidc-role-arn-aws-license-service
               role-arn: ${{ secrets.VAULT_GROUPED_AWS_MP_GITHUB_OIDC_ROLE_ARN_AWS_LICENSE_SERVICE_ROLE_ARN }}
 
           - name: Get the Marketplace registry credentials from vault
-            uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+            uses: liquibase/build-logic/.github/actions/setup-aws-vault@6e9cd7ae7956e31d3381e247f25de68f306ba80c # main
             with:
               group: aws-marketplace
               role-arn: ${{ secrets.VAULT_GROUPED_AWS_MARKETPLACE_ROLE_ARN }}
 
           - name: Get the ECR repository from vault
-            uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+            uses: liquibase/build-logic/.github/actions/setup-aws-vault@6e9cd7ae7956e31d3381e247f25de68f306ba80c # main
             with:
               group: aws-ecr-ecs
               role-arn: ${{ secrets.VAULT_GROUPED_AWS_ECR_ECS_ROLE_ARN }}
 
           - name: Get the product id from vault
-            uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+            uses: liquibase/build-logic/.github/actions/setup-aws-vault@6e9cd7ae7956e31d3381e247f25de68f306ba80c # main
             with:
               group: product-id
               role-arn: ${{ secrets.VAULT_GROUPED_PRODUCT_ID_ROLE_ARN }}

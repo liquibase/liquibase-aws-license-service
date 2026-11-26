@@ -51,13 +51,13 @@ jobs:
       # checkout token (see below), and is also available to the amazon.aws.version sync
       # (which reads the private liquibase-pro repo) and the auto-merge step.
       - name: Get the liquibot PAT from vault
-        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@6e9cd7ae7956e31d3381e247f25de68f306ba80c # main
         with:
           group: liquibot-github-pat
           role-arn: ${{ secrets.VAULT_GROUPED_LIQUIBOT_GITHUB_PAT_ROLE_ARN }}
 
       - name: Get the team-techops Slack webhook from vault
-        uses: liquibase/build-logic/.github/actions/setup-aws-vault@2003fece51886ec69cda3df1cb4520b3ceeb2e0c # main
+        uses: liquibase/build-logic/.github/actions/setup-aws-vault@6e9cd7ae7956e31d3381e247f25de68f306ba80c # main
         with:
           group: team-techops-slack-webhook
           role-arn: ${{ secrets.VAULT_GROUPED_TEAM_TECHOPS_SLACK_WEBHOOK_ROLE_ARN }}
