@@ -50,6 +50,8 @@ jobs:
       MP_TABLE_NAME: liquibase-secure-marketplace-changesets
       MP_PRODUCT_ID: prod-l2panlvbozc5e
       MP_STALL_HOURS: ${{ inputs.stall_hours || '2' }}
+      # A failed change set never changes again, so it is reported for a day (12 runs), not forever.
+      MP_FAILED_LOOKBACK_HOURS: 24
     steps:
       # MP_STALL_HOURS reaches both scan steps as arithmetic. A non-numeric value
       # aborts the step under `set -e`, and a zero-padded one like "08" is read
@@ -283,6 +285,70 @@ jobs:
 
           echo "ORPHANED=${ORPHANED}" >> "$GITHUB_ENV"
 
+      # A rejected submission has no DynamoDB row and no listed version, which is how test-6.0.2-170.1's SCAN_ERROR left this watchdog green.
+      - name: Look for failed change sets
+        run: |
+          set -euo pipefail
+
+          SINCE=$(date -u -d "-${MP_FAILED_LOOKBACK_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)
+
+          FILTERS=$(jq -cn --arg product "${MP_PRODUCT_ID}" --arg since "${SINCE}" '[
+            {Name: "EntityId", ValueList: [$product]},
+            {Name: "Status", ValueList: ["FAILED"]},
+            {Name: "AfterEndTime", ValueList: [$since]}
+          ]')
+
+          aws marketplace-catalog list-change-sets \
+            --catalog AWSMarketplace \
+            --region "${AWS_REGION}" \
+            --filter-list "${FILTERS}" \
+            --output json > failed.json
+
+          # Exported before the describe loop so a describe error cannot hide the count from Report.
+          FAILED=$(jq '.ChangeSetSummaryList // [] | length' failed.json)
+          echo "FAILED=${FAILED}" >> "$GITHUB_ENV"
+          : > failed.md
+
+          for CHANGESET in $(jq -r '.ChangeSetSummaryList[]?.ChangeSetId' failed.json); do
+            aws marketplace-catalog describe-change-set \
+              --catalog AWSMarketplace \
+              --change-set-id "${CHANGESET}" \
+              --region "${AWS_REGION}" \
+              --output json > "changeset-${CHANGESET}.json"
+
+            # URLs are withheld because this repo is public and a SCAN_ERROR message is a signed report link, and SERVER_FAULT advice comes first because AWS says to retry it.
+            jq -r '
+              def shown: if test("^https?://") then " (report link withheld; run describe-change-set to read it)"
+                         elif . == "" then "" else ": \(.)" end;
+              def advice($type; $code):
+                if $code == "SERVER_FAULT" then ". AWS-side fault, which AWS says to retry: resubmit the same change before rebuilding."
+                elif $type == "AddDeliveryOptions" then ". Version titles are one-shot: rebuild under a new tag."
+                elif $type == "RestrictDeliveryOptions" then ". Unless the version is already Restricted (a duplicate), rerun restrict-aws-mp-listing.sh for it."
+                else "" end;
+              . as $cs
+              | ($cs.FailureCode // "FAILED") as $code
+              | "\($cs.ChangeSetId)" as $id
+              | ([.ChangeSet[]?.ErrorDetailList // [] | .[]] | length > 0) as $has_details
+              | (if (.ChangeSet // []) == [] then [{}] else .ChangeSet end)[]
+              | (.DetailsDocument.Version.VersionTitle // "no version title") as $title
+              | (.ChangeType // "unknown change") as $type
+              | "\($id) \($title) \($type) ended \($cs.EndTime)" as $head
+              | if $has_details
+                then ((.ErrorDetailList // [])[] | "\($head): \(.ErrorCode)\((.ErrorMessage // "") | shown)\(advice($type; $code))")
+                else "\($head): \($code)\(($cs.FailureDescription // "") | shown)\(advice($type; $code))"
+                end
+            ' "changeset-${CHANGESET}.json" > errors.txt
+
+            while IFS= read -r LINE; do
+              echo "❌ ${LINE}"
+              echo "* ${LINE}" >> failed.md
+            done < errors.txt
+          done
+
+          if [ "${FAILED}" -eq 0 ]; then
+            echo "✅ No change set failed in the last ${MP_FAILED_LOOKBACK_HOURS}h."
+          fi
+
       # always(), with defaults below: if a scan step fails before writing
       # GITHUB_ENV the summary should still say what was known, rather than the
       # watchdog going quiet at exactly the moment something is wrong.
@@ -294,13 +360,25 @@ jobs:
           AWAITING="${AWAITING:-0}"
           STALLED="${STALLED:-0}"
           ORPHANED="${ORPHANED:-0}"
+          FAILED="${FAILED:-0}"
 
           {
             echo "## Marketplace release watchdog"
             echo ""
             echo "Awaiting release: ${AWAITING}. Stalled beyond ${MP_STALL_HOURS}h: ${STALLED}."
             echo "Published but never tracked by the poller: ${ORPHANED}."
+            echo "Change sets failed in the last ${MP_FAILED_LOOKBACK_HOURS}h: ${FAILED}."
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${FAILED}" -gt 0 ]; then
+            {
+              echo ""
+              echo "AWS rejected these change sets (each line carries its recovery step):"
+              echo ""
+              cat failed.md 2>/dev/null || true
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::${FAILED} marketplace change set(s) failed in the last ${MP_FAILED_LOOKBACK_HOURS}h."
+          fi
 
           if [ "${ORPHANED}" -gt 0 ]; then
             {
@@ -329,11 +407,11 @@ jobs:
             echo "::error::${STALLED} marketplace release(s) stalled for more than ${MP_STALL_HOURS}h."
           fi
 
-          if [ "${STALLED}" -gt 0 ] || [ "${ORPHANED}" -gt 0 ]; then
+          if [ "${STALLED}" -gt 0 ] || [ "${ORPHANED}" -gt 0 ] || [ "${FAILED}" -gt 0 ]; then
             if [ "${ORPHANED}" -gt 0 ]; then
               echo "::error::${ORPHANED} published test version(s) were never picked up by the poller."
             fi
             exit 1
           fi
 
-          echo "✅ Everything waiting is still inside the expected window, and every recent test version is tracked."
+          echo "✅ Everything waiting is still inside the expected window, every recent test version is tracked, and no change set failed."
